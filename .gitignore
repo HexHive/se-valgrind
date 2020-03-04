@@ -1,5 +1,15 @@
 *.o
 
+/segrind/.deps
+/segrind/Makefile
+/segrind/Makefile.in
+/segrind/tests/.deps
+/segrind/tests/Makefile
+/segrind/tests/Makefile.in
+/segrind/docs/Makefile
+/segrind/docs/Makefile.in
+
+
 # /
 /.in_place
 /.vs
