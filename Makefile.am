@@ -12,6 +12,7 @@ TOOLS = \
 		massif \
 		dhat \
 		lackey \
+		segrind \
 		none
 
 EXP_TOOLS = \

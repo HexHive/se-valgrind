@@ -118,7 +118,7 @@ static void ocache_sarp_Clear_Origins ( Addr, UWord ); /* fwds */
    On 32-bit machines the memory map is organised as follows.
    The top 16 bits of an address are used to index into a top-level
    map table, containing 65536 entries.  Each entry is a pointer to a
-   second-level map, which records the accesibililty and validity
+   second-level map, which records the accessibility and validity
    permissions for the 65536 bytes indexed by the lower 16 bits of the
    address.  Each byte is represented by two bits (details are below).  So
    each second-level map contains 16384 bytes.  This two-level arrangement
