@@ -5,6 +5,10 @@ set(VALGRIND_TOOL_NAME segrind)
 set(VALGRIND_TOOL_DIR ${CMAKE_CURRENT_SOURCE_DIR}/${VALGRIND_TOOL_NAME})
 set(VALGRIND_INSTALL_DIR ${CMAKE_CURRENT_BINARY_DIR}/install)
 
+include_directories(include/
+        VEX/pub/
+        )
+
 set(VALGRIND_TOOL_SRCS
         ${VALGRIND_TOOL_DIR}/clo.c
         ${VALGRIND_TOOL_DIR}/se_main.c
@@ -12,6 +16,7 @@ set(VALGRIND_TOOL_SRCS
 
 set(VALGRIND_TOOL_INCS
         ${VALGRIND_TOOL_DIR}/se.h
+        ${VALGRIND_INCS}
         )
 
 add_custom_command(
@@ -33,6 +38,11 @@ add_custom_target(
         COMMAND make install
         BYPRODUCTS ${VALGRIND_TOOL_NAME}/${VALGRIND_TOOL_NAME}-amd64-linux
         SOURCES ${VALGRIND_TOOL_SRCS} ${VALGRIND_TOOL_INCS}
+)
+
+add_executable(
+        DummyTarget
+        ${VALGRIND_TOOL_SRCS} ${VALGRIND_TOOL_INCS}
 )
 
 add_dependencies(BuildValgrind ConfigureValgrind)

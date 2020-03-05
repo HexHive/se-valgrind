@@ -24,19 +24,17 @@
    The GNU General Public License is contained in the file COPYING.
 */
 
-#include "se.h"
+#include "pub_tool_basics.h"
 #include "pub_tool_redir.h"
+#include "se.h"
 #include "valgrind.h"
 
-void VG_(set_IP) ( ThreadId tid, Addr ip );
+void VG_(set_IP)(ThreadId tid, Addr ip);
 
 static Bool client_running = False;
-static Bool target_function_running = False;
 static ThreadId target_id = VG_INVALID_THREADID;
 
-static void SE_(post_clo_init)(void)
-{
-}
+static void SE_(post_clo_init)(void) {}
 
 static
 void SE_(thread_creation)(ThreadId tid, ThreadId child) {
@@ -90,19 +88,18 @@ IRSB* SE_(instrument) ( VgCallbackClosure* closure,
     return bb;
 }
 
-static void SE_(fini)(Int exitcode)
-{
-    if(cmd_in > 0) {
-        VG_(close)(cmd_in);
-    }
+static void SE_(fini)(Int exitcode) {
+  if (SE_(cmd_in) > 0) {
+    VG_(close)(SE_(cmd_in));
+  }
 
-    if(cmd_out > 0) {
-        VG_(close)(cmd_out);
-    }
+  if (SE_(cmd_out) > 0) {
+    VG_(close)(SE_(cmd_out));
+  }
 
-    if(log > 0) {
-        VG_(close)(log);
-    }
+  if (SE_(log) > 0) {
+    VG_(close)(SE_(log));
+  }
 }
 
 static void SE_(pre_clo_init)(void)
