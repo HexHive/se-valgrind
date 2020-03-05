@@ -278,9 +278,11 @@ static void showTy ( FILE* f, MPI_Datatype ty )
    else if (ty == MPI_LONG_INT)       fprintf(f,"LONG_INT");
    else if (ty == MPI_SHORT_INT)      fprintf(f,"SHORT_INT");
    else if (ty == MPI_2INT)           fprintf(f,"2INT");
+#if !((OMPI_MAJOR_VERSION >= 4) && !(OMPI_ENABLE_MPI1_COMPAT))
    else if (ty == MPI_UB)             fprintf(f,"UB");
    else if (ty == MPI_LB)             fprintf(f,"LB");
-#  if defined(MPI_WCHAR)
+#endif
+#if defined(MPI_WCHAR)
    else if (ty == MPI_WCHAR)          fprintf(f,"WCHAR");
 #  endif
    else if (ty == MPI_LONG_LONG_INT)  fprintf(f,"LONG_LONG_INT");
@@ -455,13 +457,17 @@ Bool isMSI ( MPI_Status* status )
 /* Get the 'extent' of a type.  Note, as per the MPI spec this
    includes whatever padding would be required when using 'ty' in an
    array. */
-static long extentOfTy ( MPI_Datatype ty )
-{
-   int      r;
-   MPI_Aint n;
-   r = PMPI_Type_extent(ty, &n);
-   assert(r == MPI_SUCCESS);
-   return (long)n;
+static long extentOfTy ( MPI_Datatype ty ) {
+  int r;
+  MPI_Aint n;
+#if defined(MPI_VERSION) && (MPI_VERSION >= 2)
+  MPI_Aint l;
+  r = PMPI_Type_get_extent(ty, &l, &n);
+#else
+  r = PMPI_Type_extent(ty, &n);
+#endif
+  assert(r == MPI_SUCCESS);
+  return (long)n;
 }
 
 /* Free up *ty, if it is safe to do so */
@@ -733,8 +739,10 @@ void walk_type ( void(*f)(void*,long), char* base, MPI_Datatype ty )
          f(base + offsetof(Ty,loc), sizeof(int));
          return;
       }
+#if !((OMPI_MAJOR_VERSION >= 4) && !(OMPI_ENABLE_MPI1_COMPAT))
       if (ty == MPI_LB || ty == MPI_UB)
          return; /* have zero size, so nothing needs to be done */
+#endif
       goto unhandled;
       /*NOTREACHED*/
    }
