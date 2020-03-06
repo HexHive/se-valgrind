@@ -97,7 +97,6 @@ static VgSchedReturnCode thread_wrapper(Word /*ThreadId*/ tidW)
 
    /* Thread created with all signals blocked; scheduler will set the
       appropriate mask */
-
    ret = VG_(scheduler)(tid);
 
    vg_assert(VG_(is_exiting)(tid));

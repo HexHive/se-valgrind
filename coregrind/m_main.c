@@ -2036,7 +2036,11 @@ Int valgrind_main ( Int argc, HChar **argv, HChar **envp )
      vg_assert(VG_(running_tid) == VG_INVALID_THREADID);
      VG_(running_tid) = tid_main;
 
-     VG_(ii_finalise_image)( the_iifii );
+     Addr original_ip = VG_(get_IP)(tid_main);
+     VG_(ii_finalise_image)(the_iifii);
+     if (original_ip > 0) {
+       VG_(set_IP)(tid_main, original_ip);
+     }
 
      /* Clear the running thread indicator */
      VG_(running_tid) = VG_INVALID_THREADID;

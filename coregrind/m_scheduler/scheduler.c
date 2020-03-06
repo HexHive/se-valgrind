@@ -1135,18 +1135,17 @@ static void handle_tt_miss ( ThreadId tid )
                                  ip, True/*upd_fast_cache*/ );
    if (UNLIKELY(!found)) {
       /* Not found; we need to request a translation. */
-      if (VG_(translate)( tid, ip, /*debug*/False, 0/*not verbose*/, 
-                          bbs_done, True/*allow redirection*/ )) {
-         found = VG_(search_transtab)( NULL, NULL, NULL,
-                                       ip, True ); 
-         vg_assert2(found, "handle_tt_miss: missing tt_fast entry");
-      
+      if (VG_(translate)(tid, ip, /*debug*/ False, 0 /*not verbose*/, bbs_done,
+                         True /*allow redirection*/)) {
+        found = VG_(search_transtab)(NULL, NULL, NULL, ip, True);
+        vg_assert2(found, "handle_tt_miss: missing tt_fast entry");
+
       } else {
-	 // If VG_(translate)() fails, it's because it had to throw a
-	 // signal because the client jumped to a bad address.  That
-	 // means that either a signal has been set up for delivery,
-	 // or the thread has been marked for termination.  Either
-	 // way, we just need to go back into the scheduler loop.
+        // If VG_(translate)() fails, it's because it had to throw a
+        // signal because the client jumped to a bad address.  That
+        // means that either a signal has been set up for delivery,
+        // or the thread has been marked for termination.  Either
+        // way, we just need to go back into the scheduler loop.
       }
    }
 }
@@ -1284,7 +1283,7 @@ VgSchedReturnCode VG_(scheduler) ( ThreadId tid )
    static Bool vgdb_startup_action_done = False;
 
    if (VG_(clo_trace_sched))
-      print_sched_event(tid, "entering VG_(scheduler)");      
+     print_sched_event(tid, "entering VG_(scheduler)");
 
    /* Do vgdb initialization (but once). Only the first (main) task
       starting up will do the below.

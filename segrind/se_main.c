@@ -24,19 +24,18 @@
    The GNU General Public License is contained in the file COPYING.
 */
 
-#include "../coregrind/pub_core_threadstate.h"
+#include "../coregrind/pub_core_debuginfo.h"
 #include "pub_tool_basics.h"
+#include "pub_tool_libcproc.h"
 #include "pub_tool_options.h"
-         "
+
 #include "se.h"
 #include "valgrind.h"
 
 static Bool client_running = False;
 static ThreadId target_id = VG_INVALID_THREADID;
 
-#define INSTR_PTR(regs) ((regs).vex.VG_INSTR_PTR)
-
-extern VG_(set_IP)(ThreadId tid, Addr addr);
+extern void VG_(set_IP)(ThreadId tid, Addr addr);
 
 static void SE_(post_clo_init)(void) {
   VG_(clo_vex_control).iropt_register_updates_default =
@@ -45,8 +44,19 @@ static void SE_(post_clo_init)(void) {
 
 static void SE_(thread_creation)(ThreadId tid, ThreadId child) {
   if (!client_running) {
-    VG_(umsg)("Thread %u created target thread %u\n", tid, child);
+    VG_(umsg)
+    ("(PID %d TID %d)\tThread %u created target thread %u\n", VG_(getpid)(),
+     VG_(gettid)(), tid, child);
     target_id = child;
+    VG_(umsg)("Thread %u IP = 0x%lx\n", target_id, VG_(get_IP)(target_id));
+    SymAVMAs symAvma;
+    if (VG_(lookup_symbol_SLOW)(VG_(current_DiEpoch()), "*", "foo", &symAvma)) {
+      VG_(umsg)("Found address for foo at 0x%lx\n", symAvma.main);
+      VG_(set_IP)(target_id, symAvma.main);
+    } else {
+      VG_(umsg)("Could not find address for foo\n");
+    }
+    VG_(umsg)("Thread %u IP = 0x%lx\n", target_id, VG_(get_IP)(target_id));
   }
 }
 
@@ -60,13 +70,12 @@ static void SE_(thread_exit)(ThreadId tid) {
 
 static void SE_(start_client_code)(ThreadId tid, ULong blocks_dispatched) {
   if (!client_running && tid == target_id) {
-    VG_(umsg)
-    ("Thread %u is starting executing at instruction 0x%lx with "
-     "blocks_dispatched=%llu\n",
-     tid, VG_(get_IP)(tid), blocks_dispatched);
     client_running = True;
-    VG_(set_IP)(target_id, (Addr)0x10914B);
-    VG_(umsg)("Thread %u IP = 0x%lx\n", target_id, VG_(get_IP)(target_id));
+    VG_(umsg)
+    ("(PID %d TID %d)\tThread %u is starting executing at instruction 0x%lx "
+     "with "
+     "blocks_dispatched=%llu\n",
+     VG_(getpid)(), VG_(gettid)(), tid, VG_(get_IP)(tid), blocks_dispatched);
   }
 }
 
@@ -85,9 +94,11 @@ static IRSB *SE_(instrument)(VgCallbackClosure *closure, IRSB *bb,
   const HChar *fnname;
   VG_(get_fnname)(de, closure->nraddr, &fnname);
   VG_(umsg)
-  ("Thread %u requested translation of block starting at 0x%lx in function "
+  ("(PID %d TID %d)\tThread %u (IP = 0x%lx) requested translation of block "
+   "starting at 0x%lx (0x%lx) in function "
    "%s\n",
-   closure->tid, closure->nraddr, fnname);
+   VG_(getpid)(), VG_(gettid)(), closure->tid, VG_(get_IP)(closure->tid),
+   closure->nraddr, closure->readdr, fnname);
   //    }
   return bb;
 }

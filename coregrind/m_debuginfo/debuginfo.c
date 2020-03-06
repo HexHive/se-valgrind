@@ -2466,7 +2466,6 @@ Bool VG_(get_filename_linenum) ( DiEpoch ep, Addr a,
    return True;
 }
 
-
 /* Map a function name to its entry point and toc pointer.  Is done by
    sequential search of all symbol tables, so is very slow.  To
    mitigate the worst performance effects, you may specify a soname
@@ -2489,7 +2488,7 @@ Bool VG_(lookup_symbol_SLOW)(DiEpoch ep,
       if (debug)
          VG_(printf)("lookup_symbol_SLOW: considering %s\n", si->soname);
       if (!is_DI_valid_for_epoch(si, ep))
-         continue;
+        continue;
       if (!VG_(string_match)(sopatt, si->soname)) {
          if (debug)
             VG_(printf)(" ... skip\n");
