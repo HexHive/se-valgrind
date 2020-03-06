@@ -24,17 +24,24 @@
    The GNU General Public License is contained in the file COPYING.
 */
 
+#include "../coregrind/pub_core_threadstate.h"
 #include "pub_tool_basics.h"
-#include "pub_tool_redir.h"
+#include "pub_tool_options.h"
+         "
 #include "se.h"
 #include "valgrind.h"
-
-void VG_(set_IP)(ThreadId tid, Addr ip);
 
 static Bool client_running = False;
 static ThreadId target_id = VG_INVALID_THREADID;
 
-static void SE_(post_clo_init)(void) {}
+#define INSTR_PTR(regs) ((regs).vex.VG_INSTR_PTR)
+
+extern VG_(set_IP)(ThreadId tid, Addr addr);
+
+static void SE_(post_clo_init)(void) {
+  VG_(clo_vex_control).iropt_register_updates_default =
+      VexRegUpdAllregsAtEachInsn;
+}
 
 static void SE_(thread_creation)(ThreadId tid, ThreadId child) {
   if (!client_running) {
@@ -58,9 +65,8 @@ static void SE_(start_client_code)(ThreadId tid, ULong blocks_dispatched) {
      "blocks_dispatched=%llu\n",
      tid, VG_(get_IP)(tid), blocks_dispatched);
     client_running = True;
-    VG_(umsg)("Thread %u is about to call target function\n", tid);
-    VG_(set_IP)(tid, (Addr)0x401145);
-    VG_(umsg)("Thread %u returned\n", tid);
+    VG_(set_IP)(target_id, (Addr)0x10914B);
+    VG_(umsg)("Thread %u IP = 0x%lx\n", target_id, VG_(get_IP)(target_id));
   }
 }
 
