@@ -26,11 +26,13 @@
 
 #include "../coregrind/pub_core_debuginfo.h"
 #include "pub_tool_basics.h"
+#include "pub_tool_libcassert.h"
 #include "pub_tool_libcproc.h"
 #include "pub_tool_options.h"
 
 #include "se.h"
-#include "valgrind.h"
+
+#include <sys/wait.h>
 
 static Bool client_running = False;
 static ThreadId target_id = VG_INVALID_THREADID;
@@ -38,8 +40,32 @@ static ThreadId target_id = VG_INVALID_THREADID;
 extern void VG_(set_IP)(ThreadId tid, Addr addr);
 
 static void SE_(post_clo_init)(void) {
-  VG_(clo_vex_control).iropt_register_updates_default =
-      VexRegUpdAllregsAtEachInsn;
+  Int pid = VG_(fork)();
+  if (pid == 0) {
+    VG_(umsg)("Child process is continuing\n");
+    VG_(clo_vex_control).iropt_register_updates_default =
+        VexRegUpdAllregsAtEachInsn;
+  } else if (pid > 0) {
+    Int status;
+    if (VG_(waitpid)(pid, &status, 0) < 0) {
+      VG_(tool_panic)("waitpid failed!");
+    }
+    if (WIFEXITED(status)) {
+      VG_(umsg)("Child process exited with status %d\n", WEXITSTATUS(status));
+      VG_(exit)(0);
+    } else if (WIFSIGNALED(status)) {
+      VG_(umsg)("Child process was given the signal %d\n", WTERMSIG(status));
+      VG_(exit)(1);
+    } else if (WIFSTOPPED(status)) {
+      VG_(umsg)("Child process stopped by signal %d\n", WSTOPSIG(status));
+      VG_(exit)(2);
+    } else {
+      VG_(umsg)("Invalid child return status\n");
+      VG_(exit)(3);
+    }
+  } else {
+    VG_(tool_panic)("Could not fork!");
+  }
 }
 
 static void SE_(thread_creation)(ThreadId tid, ThreadId child) {
