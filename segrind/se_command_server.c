@@ -4,20 +4,70 @@
 
 #include "se_command_server.h"
 #include "pub_tool_libcassert.h"
+#include "pub_tool_libcfile.h"
 #include "pub_tool_mallocfree.h"
+#include "pub_tool_vki.h"
 
-SE_(cmd_server) * make_server(Int commander_r_fd, Int commander_w_fd) {
+/**
+ * @brief Write message to commander pipe
+ * @param server
+ * @param msg
+ * @return Total bytes written or 0 on error
+ */
+static SizeT SE_(write_to_commander)(SE_(cmd_server) * server,
+                                     const SE_(cmd_msg) * msg, Bool free_msg) {
+  tl_assert(server);
+  tl_assert(msg);
+
+  SizeT bytes_written = SE_(write_msg_to_fd)(server->commander_w_fd, msg);
+  if (bytes_written <= 0) {
+    bytes_written = 0;
+    VG_(umsg)
+    ("Failed to write %s message to commander\n",
+     SE_(msg_type_str(msg->msg_type)));
+  }
+
+  if (free_msg) {
+    SE_(free_msg)(msg);
+  }
+
+  return bytes_written;
+}
+
+SE_(cmd_server) * SE_(make_server)(const HChar *commander_in_path,
+                                   const HChar *commander_out_path) {
   SE_(cmd_server) *cmd_server = (SE_(cmd_server) *)VG_(malloc)(
       "SE_(cmd_server)", sizeof(SE_(cmd_server)));
   if (!cmd_server) {
     return (SE_(cmd_server *)) - 1;
   }
 
-  cmd_server->commander_r_fd = commander_r_fd;
-  cmd_server->commander_w_fd = commander_w_fd;
+  cmd_server->commander_r_fd = VG_(fd_open)(commander_in_path, VKI_O_RDONLY, 0);
+  if (cmd_server->commander_r_fd < 0) {
+    VG_(umsg)("Server failed to open %s\n", commander_in_path);
+    VG_(free)(cmd_server);
+    return (SE_(cmd_server *)) - 1;
+  }
+
+  cmd_server->commander_w_fd =
+      VG_(fd_open)(commander_out_path, VKI_O_WRONLY, 0);
+  if (cmd_server->commander_w_fd < 0) {
+    VG_(umsg)("Server failed to open %s\n", commander_in_path);
+    VG_(free)(cmd_server);
+    return (SE_(cmd_server *)) - 1;
+  }
   cmd_server->current_state = SERVER_WAIT_FOR_START;
 
   return cmd_server;
+}
+
+void SE_(start_server)(SE_(cmd_server) * server) {
+  tl_assert(server);
+  tl_assert(server->current_state == SERVER_WAIT_FOR_START);
+
+  VG_(umsg)("Starting Command Server");
+  SE_(cmd_msg) *ready_msg = SE_(create_cmd_msg)(SEMSG_READY, 0, NULL);
+  SE_(write_to_commander)(server, ready_msg, True);
 }
 
 Bool SE_(is_valid_transition)(const SE_(cmd_server) * server,

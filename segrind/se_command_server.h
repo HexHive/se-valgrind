@@ -29,11 +29,18 @@ typedef struct {
 
 /**
  * @brief Initializes and returns a command server
- * @param commander_r_fd - File descriptor to listen on for commands
- * @param commander_w_fd - File descriptor to write messages to commander
+ * @param commander_r_fd - Path to commander read pipe
+ * @param commander_w_fd - Path to commander write pipe
  * @return command server or -1 on failure
  */
-SE_(cmd_server) * make_server(Int commander_r_fd, Int commander_w_fd);
+SE_(cmd_server) * SE_(make_server)(const HChar *commander_in_path,
+                                   const HChar *commander_out_path);
+
+/**
+ * @brief Starts listening for commands
+ * @param server
+ */
+void SE_(start_server)(SE_(cmd_server) * server);
 
 /**
  * @brief Determines if the server can transition to next_state from its current
