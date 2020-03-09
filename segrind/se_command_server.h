@@ -30,11 +30,11 @@ typedef struct {
 
 /**
  * @brief Initializes and returns a command server, and bails on failure
- * @param commander_in_fd - Commander read pipe file descriptor
- * @param commander_out_fd - Commander write pipe file descriptor
+ * @param commander_r_fd - Commander read pipe file descriptor
+ * @param commander_w_fd - Commander write pipe file descriptor
  * @return command server
  */
-SE_(cmd_server) * SE_(make_server)(Int commander_in_fd, Int commander_out_fd);
+SE_(cmd_server) * SE_(make_server)(Int commander_r_fd, Int commander_w_fd);
 
 /**
  * @brief Starts listening for commands

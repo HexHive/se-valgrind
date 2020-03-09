@@ -26,10 +26,10 @@ static SizeT write_to_commander(SE_(cmd_server) * server, SE_(cmd_msg) * msg,
 
   SizeT bytes_written = SE_(write_msg_to_fd)(server->commander_w_fd, msg);
   if (bytes_written <= 0) {
-    bytes_written = 0;
     VG_(umsg)
     ("Failed to write %s message to commander\n",
      SE_(msg_type_str(msg->msg_type)));
+    bytes_written = 0;
   }
 
   if (free_msg) {
@@ -209,16 +209,17 @@ static void wait_for_child(SE_(cmd_server) * server) {
   }
 }
 
-SE_(cmd_server) * SE_(make_server)(Int commander_in_fd, Int commander_out_fd) {
-  tl_assert(commander_in_fd > 0);
-  tl_assert(commander_out_fd > 0);
+SE_(cmd_server) * SE_(make_server)(Int commander_r_fd, Int commander_w_fd) {
+  tl_assert(commander_w_fd > 0);
+  tl_assert(commander_r_fd > 0);
 
   SE_(cmd_server) *cmd_server = (SE_(cmd_server) *)VG_(malloc)(
       "SE_(cmd_server)", sizeof(SE_(cmd_server)));
   tl_assert(cmd_server);
+  VG_(umsg)("Command Server created!\n");
 
-  cmd_server->commander_r_fd = commander_in_fd;
-  cmd_server->commander_w_fd = commander_out_fd;
+  cmd_server->commander_r_fd = commander_r_fd;
+  cmd_server->commander_w_fd = commander_w_fd;
   cmd_server->current_state = SERVER_WAIT_FOR_START;
   cmd_server->running_pid = -1;
   cmd_server->target_func_addr = (Addr)NULL;
@@ -230,9 +231,10 @@ void SE_(start_server)(SE_(cmd_server) * server) {
   tl_assert(server);
   tl_assert(server->current_state == SERVER_WAIT_FOR_START);
 
-  VG_(umsg)("Starting Command Server");
   SE_(cmd_msg) *ready_msg = SE_(create_cmd_msg)(SEMSG_READY, 0, NULL);
-  write_to_commander(server, ready_msg, True);
+  if (write_to_commander(server, ready_msg, True) == 0) {
+    return;
+  }
 
   SE_(set_server_state)(server, SERVER_WAIT_FOR_TARGET);
 

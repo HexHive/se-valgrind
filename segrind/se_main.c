@@ -33,12 +33,13 @@
 
 static Bool client_running = False;
 static ThreadId target_id = VG_INVALID_THREADID;
-SE_(cmd_server) * SE_(command_server);
+SE_(cmd_server) * SE_(command_server) = NULL;
 
 extern void VG_(set_IP)(ThreadId tid, Addr addr);
 
 static void SE_(post_clo_init)(void) {
   SE_(command_server) = SE_(make_server)(SE_(cmd_in), SE_(cmd_out));
+  VG_(umsg)("Starting Command Server\n");
   SE_(start_server)(SE_(command_server));
 
   if (SE_(command_server)->current_state != SERVER_EXECUTING) {

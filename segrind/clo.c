@@ -6,6 +6,9 @@
 #include "se.h"
 
 UInt SE_(MaxDuration) = MAX_DURATION;
+Int SE_(cmd_in) = -1;
+Int SE_(cmd_out) = -1;
+Int SE_(log) = -1;
 
 Bool SE_(process_cmd_line_option)(const HChar *arg) {
   const HChar *tmp_str;
