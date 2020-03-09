@@ -233,7 +233,7 @@ void SE_(start_server)(SE_(cmd_server) * server) {
 
   SE_(cmd_msg) *ready_msg = SE_(create_cmd_msg)(SEMSG_READY, 0, NULL);
   if (write_to_commander(server, ready_msg, True) == 0) {
-    return;
+    VG_(tool_panic)("Could not write ready message to pipe\n");
   }
 
   SE_(set_server_state)(server, SERVER_WAIT_FOR_TARGET);
