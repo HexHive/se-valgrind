@@ -49,7 +49,7 @@ SizeT SE_(write_msg_to_fd)(Int fd, const SE_(cmd_msg) * msg) {
   tl_assert(fd >= 0);
   tl_assert(msg);
 
-  SizeT bytes_written;
+  SizeT bytes_written = 0;
   if (VG_(write)(fd, &msg->msg_type, sizeof(msg->msg_type)) <= 0) {
     return 0;
   }

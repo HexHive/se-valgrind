@@ -26,6 +26,9 @@ Bool SE_(process_cmd_line_option)(const HChar *arg) {
       VG_(fmsg_bad_option(arg, "Could not open log\n"));
     }
   } else if (VG_INT_CLO(arg, "--max-duration", SE_(MaxDuration))) {
+    if (SE_(MaxDuration) <= 0) {
+      VG_(fmsg_bad_option(arg, "max-duration must be larger than zero"));
+    }
   }
 
   return False;

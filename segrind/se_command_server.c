@@ -27,8 +27,8 @@ static SizeT write_to_commander(SE_(cmd_server) * server, SE_(cmd_msg) * msg,
   SizeT bytes_written = SE_(write_msg_to_fd)(server->commander_w_fd, msg);
   if (bytes_written <= 0) {
     VG_(umsg)
-    ("Failed to write %s message to commander\n",
-     SE_(msg_type_str(msg->msg_type)));
+    ("Failed to write %s message to commander: %llu\n",
+     SE_(msg_type_str)(msg->msg_type), bytes_written);
     bytes_written = 0;
   }
 
@@ -131,6 +131,7 @@ static Bool handle_set_target_cmd(SE_(cmd_msg) * msg,
  * @return True if parent should fork because an Execute command was issued
  */
 static Bool handle_command(SE_(cmd_server) * server) {
+  VG_(umsg)("Handling command\n");
   SE_(cmd_msg) *cmd_msg = read_from_commander(server);
   if (cmd_msg == NULL) {
     report_error(server, "Failed to read message");
@@ -244,12 +245,13 @@ void SE_(start_server)(SE_(cmd_server) * server) {
     fds[0].events = VKI_POLLIN;
     fds[0].revents = 0;
 
-    if (sr_isError(
-            VG_(poll)(fds, sizeof(fds) / sizeof(struct vki_pollfd), -1))) {
+    VG_(umsg)("Calling poll\n");
+    if (sr_isError(VG_(poll)(fds, 1, -1))) {
       VG_(tool_panic)("VG_(poll) failed!");
     }
+    VG_(umsg)("VG_(poll) returned\n");
 
-    if (fds[0].revents & VKI_POLLIN) {
+    if ((fds[0].revents & VKI_POLLIN) == VKI_POLLIN) {
       if (handle_command(server)) {
         Int pid = VG_(fork)();
         if (pid < 0) {
