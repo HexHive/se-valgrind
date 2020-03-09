@@ -11,7 +11,7 @@ if VGCONF_HAVE_PLATFORM_SEC
 noinst_PROGRAMS += segrind-@VGCONF_ARCH_SEC@-@VGCONF_OS@
 endif
 
-segrind_SOURCES_COMMON = se_main.c clo.c
+segrind_SOURCES_COMMON = se_main.c clo.c se_command.c se_command_server.c
 
 segrind_@VGCONF_ARCH_PRI@_@VGCONF_OS@_SOURCES      = \
 	$(segrind_SOURCES_COMMON)

@@ -15,7 +15,7 @@
  * @return Total bytes written or 0 on error
  */
 static SizeT SE_(write_to_commander)(SE_(cmd_server) * server,
-                                     const SE_(cmd_msg) * msg, Bool free_msg) {
+                                     SE_(cmd_msg) * msg, Bool free_msg) {
   tl_assert(server);
   tl_assert(msg);
 

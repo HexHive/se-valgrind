@@ -13,7 +13,7 @@ SE_(cmd_msg) *
   if (length > 0) {
     new_data = VG_(malloc)("SE_(cmd_msg)", length);
     if (!new_data) {
-      return -1;
+      return (SE_(cmd_msg) *)-1;
     }
     VG_(memcpy)(new_data, data, length);
   }
@@ -23,7 +23,7 @@ SE_(cmd_msg) *
     if (new_data) {
       VG_(free)(new_data);
     }
-    return -1;
+    return (SE_(cmd_msg) *)-1;
   }
 
   res->data = new_data;
