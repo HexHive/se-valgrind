@@ -86,6 +86,11 @@ static void report_error(SE_(cmd_server) * server, const HChar *msg) {
   write_to_commander(server, cmdmsg, True);
 }
 
+static void report_success(SE_(cmd_server) * server, SizeT len, void *data) {
+  SE_(cmd_msg) *cmdmsg = SE_(create_cmd_msg)(SEMSG_OK, len, data);
+  write_to_commander(server, cmdmsg, True);
+}
+
 static void send_ack_to_commander(SE_(cmd_server) * server) {
   write_to_commander(server, SE_(create_cmd_msg)(SEMSG_ACK, 0, NULL), True);
 }
@@ -130,11 +135,14 @@ static Bool handle_command(SE_(cmd_server) * server) {
   }
   send_ack_to_commander(server);
 
-  Bool result = False;
+  Bool parent_should_fork = False;
   Bool msg_handled = False;
   switch (cmd_msg->msg_type) {
   case SEMSG_SET_TGT:
     msg_handled = handle_set_target_cmd(cmd_msg, server);
+    if (msg_handled) {
+      report_success(server, 0, NULL);
+    }
     break;
   case SEMSG_EXIT:
     SE_(stop_server)(server);
@@ -146,22 +154,23 @@ static Bool handle_command(SE_(cmd_server) * server) {
   case SEMSG_EXECUTE:
     msg_handled = SE_(set_server_state)(server, SERVER_EXECUTING);
     /* We want to fork a new process to actually execute the target code */
-    result = True;
+    parent_should_fork = True;
     break;
   case SEMSG_SET_CTX:
     /* TODO: Implement me when IOVecs are ported */
     break;
   default:
     msg_handled = True;
+    break;
   }
 
   SE_(free_msg)(cmd_msg);
   if (!msg_handled) {
     report_error(server, NULL);
-    result = False;
+    parent_should_fork = False;
   }
 
-  return result;
+  return parent_should_fork;
 }
 
 static void wait_for_child(SE_(cmd_server) * server) {
