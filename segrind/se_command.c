@@ -2,8 +2,9 @@
 // Created by derrick on 3/8/20.
 //
 
-#include "se_command.h"
 #include "se.h"
+
+#include "se_command.h"
 
 #include "pub_tool_mallocfree.h"
 

@@ -3,7 +3,6 @@
 //
 
 #include "se_command_server.h"
-#include "se.h"
 
 #include "pub_tool_libcproc.h"
 #include "pub_tool_libcsignal.h"
@@ -46,6 +45,8 @@ static SizeT write_to_commander(SE_(cmd_server) * server, SE_(cmd_msg) * msg,
  * @return Command message or NULL on error;
  */
 static SE_(cmd_msg) * read_from_commander(SE_(cmd_server) * server) {
+  tl_assert(server);
+
   SE_(cmd_msg_t) msg_type;
   if (VG_(read)(server->commander_r_fd, &msg_type, sizeof(msg_type)) <= 0) {
     return NULL;
@@ -84,6 +85,8 @@ static void report_error(SE_(cmd_server) * server, const HChar *msg) {
 
   SE_(cmd_msg) *cmdmsg = SE_(create_cmd_msg)(SEMSG_FAIL, msg_len, msg);
   write_to_commander(server, cmdmsg, True);
+
+  SE_(set_server_state)(server, SERVER_REPORT_ERROR);
 }
 
 static void report_success(SE_(cmd_server) * server, SizeT len, void *data) {

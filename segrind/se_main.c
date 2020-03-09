@@ -24,14 +24,16 @@
    The GNU General Public License is contained in the file COPYING.
 */
 
+#include "se.h"
+#include "se_command_server.h"
+
 #include "pub_tool_basics.h"
 #include "pub_tool_libcproc.h"
 #include "pub_tool_options.h"
 
-#include "se.h"
-
 static Bool client_running = False;
 static ThreadId target_id = VG_INVALID_THREADID;
+SE_(cmd_server) * SE_(command_server);
 
 extern void VG_(set_IP)(ThreadId tid, Addr addr);
 

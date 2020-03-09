@@ -19,11 +19,7 @@
 #include "pub_tool_tooliface.h"
 #include "pub_tool_vki.h"
 
-#include "se_command_server.h"
-
 Int SE_(cmd_in), SE_(cmd_out), SE_(log);
-
-SE_(cmd_server) * SE_(command_server);
 
 /* Number of milliseconds to run a function for */
 UInt SE_(MaxDuration);

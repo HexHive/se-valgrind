@@ -4,7 +4,6 @@
 /**
  * @brief Defines available commands and message types
  */
-
 #ifndef SE_VALGRIND_SE_COMMAND_H
 #define SE_VALGRIND_SE_COMMAND_H
 
