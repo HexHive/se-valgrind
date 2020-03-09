@@ -38,15 +38,17 @@
    of the world is entirely irrelevant. */
 
 /* --- Signal set ops (only the ops used by tools) --- */
-extern Int  VG_(sigdelset)   ( vki_sigset_t* set, Int signum );
+extern Int VG_(sigdelset)(vki_sigset_t *set, Int signum);
 /* Other Signal set ops are in pub_core_libcsignal.h and must be moved
    here if needed by tools. */
 
 /* --- Mess with the kernel's sig state --- */
-extern Int VG_(sigprocmask) ( Int how, const vki_sigset_t* set,
-                              vki_sigset_t* oldset );
+extern Int VG_(sigprocmask)(Int how, const vki_sigset_t *set,
+                            vki_sigset_t *oldset);
 
-#endif   // __PUB_TOOL_LIBCBSIGNAL_H
+extern Int VG_(kill)(Int pid, Int signo);
+
+#endif // __PUB_TOOL_LIBCBSIGNAL_H
 
 /*--------------------------------------------------------------------*/
 /*--- end                                                          ---*/

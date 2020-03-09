@@ -10,21 +10,23 @@
 
 #include "se.h"
 
+const HChar *SE_MSG_MALLOC_TYPE;
+
 typedef enum se_message_type_t_ {
-  SEMSG_FAIL = -1,  /* Request failed */
-  SEMSG_OK,         /* Request succeeded */
-  SEMSG_ACK,        /* Request receieved */
-  SEMSG_SET_TGT,    /* Change target function */
-  SEMSG_EXIT,       /* Shutdown */
-  SEMSG_FUZZ,       /* Fuzz program state */
-  SEMSG_EXECUTE,    /* Execute target function */
-  SEMSG_SET_CTX,    /* Set program state for executing target function */
-  SEMSG_READY,      /* Ready to accept and execute requests */
-  SEMSG_RESET,      /* Bring to initial state */
-  SEMSG_SET_SO_TGT, /* Set target function in shared library */
+  SEMSG_FAIL = -1, /* Request failed */
+  SEMSG_OK,        /* Request succeeded */
+  SEMSG_ACK,       /* Request receieved */
+  SEMSG_SET_TGT,   /* Change target function */
+  SEMSG_EXIT,      /* Shutdown */
+  SEMSG_FUZZ,      /* Fuzz program state */
+  SEMSG_EXECUTE,   /* Execute target function */
+  SEMSG_SET_CTX,   /* Set program state for executing target function */
+  SEMSG_READY,     /* Ready to accept and execute requests */
+  SEMSG_RESET,     /* Bring to initial state */
+  SEMSG_SET_SO_TGT /* Set target function in shared library */
 } SE_(cmd_msg_t);
 
-typedef struct {
+typedef struct se_cmd_msg {
   SE_(cmd_msg_t) msg_type;
   SizeT length;
   void *data;
@@ -36,10 +38,10 @@ typedef struct {
  * @param length - The length of data
  * @param data - Data to be sent. Memory is duplicated in a separate buffer, so
  * no need to keep data around once this call successfully returns
- * @return A message or -1 on failure
+ * @return A message or NULL on failure
  */
 SE_(cmd_msg) *
-    SE_(create_cmd_msg)(SE_(cmd_msg_t) type, SizeT length, void *data);
+    SE_(create_cmd_msg)(SE_(cmd_msg_t) type, SizeT length, const void *data);
 void SE_(free_msg)(SE_(cmd_msg) * msg);
 
 /**

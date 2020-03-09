@@ -24,15 +24,11 @@
    The GNU General Public License is contained in the file COPYING.
 */
 
-#include "../coregrind/pub_core_debuginfo.h"
 #include "pub_tool_basics.h"
-#include "pub_tool_libcassert.h"
 #include "pub_tool_libcproc.h"
 #include "pub_tool_options.h"
 
 #include "se.h"
-
-#include <sys/wait.h>
 
 static Bool client_running = False;
 static ThreadId target_id = VG_INVALID_THREADID;
@@ -40,49 +36,22 @@ static ThreadId target_id = VG_INVALID_THREADID;
 extern void VG_(set_IP)(ThreadId tid, Addr addr);
 
 static void SE_(post_clo_init)(void) {
-  Int pid = VG_(fork)();
-  if (pid == 0) {
-    VG_(umsg)("Child process is continuing\n");
-    VG_(clo_vex_control).iropt_register_updates_default =
-        VexRegUpdAllregsAtEachInsn;
-  } else if (pid > 0) {
-    Int status;
-    if (VG_(waitpid)(pid, &status, 0) < 0) {
-      VG_(tool_panic)("waitpid failed!");
-    }
-    if (WIFEXITED(status)) {
-      VG_(umsg)("Child process exited with status %d\n", WEXITSTATUS(status));
-      VG_(exit)(0);
-    } else if (WIFSIGNALED(status)) {
-      VG_(umsg)("Child process was given the signal %d\n", WTERMSIG(status));
-      VG_(exit)(1);
-    } else if (WIFSTOPPED(status)) {
-      VG_(umsg)("Child process stopped by signal %d\n", WSTOPSIG(status));
-      VG_(exit)(2);
-    } else {
-      VG_(umsg)("Invalid child return status\n");
-      VG_(exit)(3);
-    }
-  } else {
-    VG_(tool_panic)("Could not fork!");
+  SE_(command_server) = SE_(make_server)(SE_(cmd_in), SE_(cmd_out));
+  SE_(start_server)(SE_(command_server));
+
+  if (SE_(command_server)->current_state != SERVER_EXECUTING) {
+    VG_(exit)(0);
   }
+
+  /* Child executors arrive here */
+  VG_(close)(SE_(cmd_in));
+  VG_(close)(SE_(cmd_out));
 }
 
 static void SE_(thread_creation)(ThreadId tid, ThreadId child) {
   if (!client_running) {
-    VG_(umsg)
-    ("(PID %d TID %d)\tThread %u created target thread %u\n", VG_(getpid)(),
-     VG_(gettid)(), tid, child);
     target_id = child;
-    VG_(umsg)("Thread %u IP = 0x%lx\n", target_id, VG_(get_IP)(target_id));
-    SymAVMAs symAvma;
-    if (VG_(lookup_symbol_SLOW)(VG_(current_DiEpoch()), "*", "foo", &symAvma)) {
-      VG_(umsg)("Found address for foo at 0x%lx\n", symAvma.main);
-      VG_(set_IP)(target_id, symAvma.main);
-    } else {
-      VG_(umsg)("Could not find address for foo\n");
-    }
-    VG_(umsg)("Thread %u IP = 0x%lx\n", target_id, VG_(get_IP)(target_id));
+    VG_(set_IP)(target_id, SE_(command_server)->target_func_addr);
   }
 }
 
@@ -140,6 +109,10 @@ static void SE_(fini)(Int exitcode) {
 
   if (SE_(log) > 0) {
     VG_(close)(SE_(log));
+  }
+
+  if (SE_(command_server)->current_state != SERVER_EXIT) {
+    SE_(free_server)(SE_(command_server));
   }
 }
 

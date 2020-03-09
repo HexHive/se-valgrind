@@ -5,8 +5,11 @@
 #include "pub_tool_options.h"
 #include "se.h"
 
+UInt SE_(MaxDuration) = MAX_DURATION;
+
 Bool SE_(process_cmd_line_option)(const HChar *arg) {
   const HChar *tmp_str;
+
   if (VG_STR_CLO(arg, "--in-pipe", tmp_str)) {
     if ((SE_(cmd_in) = VG_(fd_open)(tmp_str, VKI_O_RDONLY, 0)) < 0) {
       VG_(fmsg_bad_option(arg, "Could not open in-pipe\n"));
@@ -19,6 +22,7 @@ Bool SE_(process_cmd_line_option)(const HChar *arg) {
     if ((SE_(log) = VG_(fd_open)(tmp_str, VKI_O_WRONLY, 0)) < 0) {
       VG_(fmsg_bad_option(arg, "Could not open log\n"));
     }
+  } else if (VG_INT_CLO(arg, "--max-duration", SE_(MaxDuration))) {
   }
 
   return False;
@@ -26,9 +30,11 @@ Bool SE_(process_cmd_line_option)(const HChar *arg) {
 
 void SE_(print_usage)(void) {
   VG_(printf)
-  ("--in-pipe=<file>    Filename of the command server read pipe\n"
-   "--out-pipe=<file>   Filename of the command server write pipe\n"
-   "--log=<file>        Filename of the log to write to\n");
+  ("--in-pipe=<file>             Filename of the command server read pipe\n"
+   "--out-pipe=<file>            Filename of the command server write pipe\n"
+   "--log=<file>                 Filename of the log to write to\n"
+   "--max-duration=<millis>      Max number of milliseconds to run before "
+   "executor process is killed\n");
 }
 
 void SE_(print_debug_usage)(void) { SE_(print_usage)(); }

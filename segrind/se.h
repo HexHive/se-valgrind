@@ -5,7 +5,12 @@
 #ifndef FOSBIN_SE_H
 #define FOSBIN_SE_H
 
+#define SE_(str) VGAPPEND(vgSegrind_, str)
+
+#define MAX_DURATION ((UInt)1000)
+
 #include "pub_tool_basics.h"
+#include "pub_tool_libcassert.h"
 #include "pub_tool_libcbase.h"
 #include "pub_tool_libcfile.h"
 #include "pub_tool_libcprint.h"
@@ -14,12 +19,14 @@
 #include "pub_tool_tooliface.h"
 #include "pub_tool_vki.h"
 
-#define SE_(str) VGAPPEND(vgSegrind_, str)
-
-Int SE_(internal_pipe_in)[2];
-Int SE_(internal_pipe_out)[2];
+#include "se_command_server.h"
 
 Int SE_(cmd_in), SE_(cmd_out), SE_(log);
+
+SE_(cmd_server) * SE_(command_server);
+
+/* Number of milliseconds to run a function for */
+UInt SE_(MaxDuration);
 
 /*****************************************************
  * Command line parsing
@@ -29,4 +36,4 @@ void SE_(print_usage)(void);
 void SE_(print_debug_usage)(void);
 void SE_(set_clo_defaults)(void);
 
-#endif //FOSBIN_SE_H
+#endif // FOSBIN_SE_H

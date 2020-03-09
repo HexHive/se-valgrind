@@ -3,27 +3,29 @@
 //
 
 #include "se_command.h"
-#include "pub_tool_libcassert.h"
-#include "pub_tool_libcfile.h"
+#include "se.h"
+
 #include "pub_tool_mallocfree.h"
 
+const HChar *SE_MSG_MALLOC_TYPE = "SE_(cmd_msg)";
+
 SE_(cmd_msg) *
-    SE_(create_cmd_msg)(SE_(cmd_msg_t) type, SizeT length, void *data) {
+    SE_(create_cmd_msg)(SE_(cmd_msg_t) type, SizeT length, const void *data) {
   void *new_data = NULL;
   if (length > 0) {
-    new_data = VG_(malloc)("SE_(cmd_msg)", length);
+    new_data = VG_(malloc)(SE_MSG_MALLOC_TYPE, length);
     if (!new_data) {
-      return (SE_(cmd_msg) *)-1;
+      return (SE_(cmd_msg) *)0;
     }
     VG_(memcpy)(new_data, data, length);
   }
 
-  SE_(cmd_msg) *res = VG_(malloc)("SE_(cmd_msg)", sizeof(SE_(cmd_msg)));
+  SE_(cmd_msg) *res = VG_(malloc)(SE_MSG_MALLOC_TYPE, sizeof(SE_(cmd_msg)));
   if (!res) {
     if (new_data) {
       VG_(free)(new_data);
     }
-    return (SE_(cmd_msg) *)-1;
+    return (SE_(cmd_msg) *)0;
   }
 
   res->data = new_data;

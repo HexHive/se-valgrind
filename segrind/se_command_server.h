@@ -5,7 +5,6 @@
 #ifndef SE_VALGRIND_SE_COMMAND_SERVER_H
 #define SE_VALGRIND_SE_COMMAND_SERVER_H
 
-#include "se.h"
 #include "se_command.h"
 
 typedef enum se_server_state {
@@ -25,22 +24,36 @@ typedef enum se_server_state {
 typedef struct {
   SE_(cmd_server_state) current_state;
   Int commander_r_fd, commander_w_fd;
+  Int running_pid;
+  Addr target_func_addr;
 } SE_(cmd_server);
 
 /**
- * @brief Initializes and returns a command server
- * @param commander_r_fd - Path to commander read pipe
- * @param commander_w_fd - Path to commander write pipe
- * @return command server or -1 on failure
+ * @brief Initializes and returns a command server, and bails on failure
+ * @param commander_in_fd - Commander read pipe file descriptor
+ * @param commander_out_fd - Commander write pipe file descriptor
+ * @return command server
  */
-SE_(cmd_server) * SE_(make_server)(const HChar *commander_in_path,
-                                   const HChar *commander_out_path);
+SE_(cmd_server) * SE_(make_server)(Int commander_in_fd, Int commander_out_fd);
 
 /**
  * @brief Starts listening for commands
  * @param server
  */
 void SE_(start_server)(SE_(cmd_server) * server);
+
+/**
+ * @brief Kills any running process, performs exiting tasks, and sets the
+ * server status to SERVER_EXIT. Does not free the server.
+ * @param server
+ */
+void SE_(stop_server)(SE_(cmd_server) * server);
+
+/**
+ * @brief Stops the server and then frees the server
+ * @param server
+ */
+void SE_(free_server)(SE_(cmd_server) * server);
 
 /**
  * @brief Determines if the server can transition to next_state from its current
@@ -71,6 +84,11 @@ Bool SE_(set_server_state)(SE_(cmd_server) * server,
 Bool SE_(msg_can_be_handled)(const SE_(cmd_server) * server,
                              const SE_(cmd_msg) * msg);
 
+/**
+ * @brief Returns string associated with server state
+ * @param state
+ * @return
+ */
 const HChar *SE_(server_state_str)(SE_(cmd_server_state) state);
 
 #endif // SE_VALGRIND_SE_COMMAND_SERVER_H

@@ -72,8 +72,7 @@ extern Int VG_(sigaction)   ( Int signum,
 extern void VG_(convert_sigaction_fromK_to_toK)(
                 const vki_sigaction_fromK_t*, /*OUT*/vki_sigaction_toK_t*);
 
-
-extern Int VG_(kill)        ( Int pid, Int signo );
+// extern Int VG_(kill)        ( Int pid, Int signo );
 extern Int VG_(tkill)       ( Int lwpid, Int signo );
 
 /* A cut-down version of POSIX sigtimedwait: poll for pending signals
