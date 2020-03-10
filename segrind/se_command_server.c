@@ -89,11 +89,21 @@ static void report_error(SE_(cmd_server) * server, const HChar *msg) {
   SE_(set_server_state)(server, SERVER_REPORT_ERROR);
 }
 
+/**
+ * @brief Sends a success message to the commander process
+ * @param server
+ * @param len - length of data
+ * @param data - data to include with success message
+ */
 static void report_success(SE_(cmd_server) * server, SizeT len, void *data) {
   SE_(cmd_msg) *cmdmsg = SE_(create_cmd_msg)(SEMSG_OK, len, data);
   write_to_commander(server, cmdmsg, True);
 }
 
+/**
+ * @brief Sends ACK to commander process
+ * @param server
+ */
 static void send_ack_to_commander(SE_(cmd_server) * server) {
   write_to_commander(server, SE_(create_cmd_msg)(SEMSG_ACK, 0, NULL), True);
 }
