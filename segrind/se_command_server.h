@@ -6,6 +6,7 @@
 #define SE_VALGRIND_SE_COMMAND_SERVER_H
 
 #include "se_command.h"
+#include "se_io_vec.h"
 
 #ifndef VKI_POLLPRI
 #define VKI_POLLPRI 0x0002
@@ -42,6 +43,9 @@ typedef struct {
   Int commander_r_fd, commander_w_fd;
   Int running_pid;
   Addr target_func_addr;
+  Int executor_pipe[2];
+  Bool using_fuzzed_io_vec;
+  Bool using_existing_io_vec
 } SE_(cmd_server);
 
 /**
@@ -70,6 +74,13 @@ void SE_(stop_server)(SE_(cmd_server) * server);
  * @param server
  */
 void SE_(free_server)(SE_(cmd_server) * server);
+
+/**
+ * @brief Kills any running child process, and resets the server to a ready
+ * state
+ * @param server
+ */
+void SE_(reset_server)(SE_(cmd_server) * server);
 
 /**
  * @brief Determines if the server can transition to next_state from its current

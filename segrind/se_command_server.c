@@ -155,6 +155,8 @@ static Bool handle_command(SE_(cmd_server) * server) {
     break;
   case SEMSG_FUZZ:
     /* TODO: Implement me when IOVecs are ported */
+    server->using_fuzzed_io_vec = True;
+    server->using_existing_io_vec = False;
     break;
   case SEMSG_EXECUTE:
     msg_handled = SE_(set_server_state)(server, SERVER_EXECUTING);
@@ -163,6 +165,8 @@ static Bool handle_command(SE_(cmd_server) * server) {
     break;
   case SEMSG_SET_CTX:
     /* TODO: Implement me when IOVecs are ported */
+    server->using_existing_io_vec = True;
+    server->using_fuzzed_io_vec = False;
     break;
   default:
     msg_handled = True;
@@ -186,33 +190,7 @@ static void wait_for_child(SE_(cmd_server) * server) {
   tl_assert(server);
   tl_assert(server->running_pid > 0);
 
-  UInt initial_time = VG_(read_millisecond_timer)();
-  UInt current_time = initial_time;
-  const HChar *error_msg = "Time expired";
-  while (current_time - initial_time < SE_(MaxDuration)) {
-    Int status;
-    Int wait_status;
-    wait_status = VG_(waitpid)(server->running_pid, &status, VKI_WNOHANG);
-    if (wait_status < 0) {
-      error_msg = "Waitpid failed";
-      break;
-    } else if (wait_status == 0) {
-      current_time = VG_(read_millisecond_timer)();
-    } else {
-      if (WIFEXITED(status) && WEXITSTATUS(status) == 0) {
-        server->running_pid = -1;
-      } else {
-        error_msg = "Error executing target";
-      }
-      break;
-    }
-  }
 
-  if (server->running_pid > 0) {
-    VG_(kill)(server->running_pid, VKI_SIGKILL);
-    server->running_pid = -1;
-    report_error(server, error_msg);
-  }
 }
 
 SE_(cmd_server) * SE_(make_server)(Int commander_r_fd, Int commander_w_fd) {
@@ -224,11 +202,10 @@ SE_(cmd_server) * SE_(make_server)(Int commander_r_fd, Int commander_w_fd) {
   tl_assert(cmd_server);
   VG_(umsg)("Command Server created!\n");
 
+  SE_(reset_server)(cmd_server);
   cmd_server->commander_r_fd = commander_r_fd;
   cmd_server->commander_w_fd = commander_w_fd;
   cmd_server->current_state = SERVER_WAIT_FOR_START;
-  cmd_server->running_pid = -1;
-  cmd_server->target_func_addr = (Addr)NULL;
 
   return cmd_server;
 }
@@ -263,12 +240,28 @@ void SE_(start_server)(SE_(cmd_server) * server) {
         Int pid = VG_(fork)();
         if (pid < 0) {
           report_error(server, "Failed to fork child process");
-        } else if (pid == 0) {
-          /* Child process exits and starts executing target code */
-          return;
         } else {
-          server->running_pid = pid;
-          wait_for_child(server);
+          if (VG_(pipe)(server->executor_pipe) < 0) {
+            if (pid > 0) {
+              report_error(server, "Executor pipe failed");
+            } else {
+              SE_(stop_server)(server);
+              return;
+            }
+          }
+
+          if (pid == 0) {
+            VG_(close)(server->executor_pipe[0]);
+            VG_(close)(server->commander_r_fd);
+            VG_(close)(server->commander_w_fd);
+
+            /* Child process exits and starts executing target code */
+            return;
+          } else {
+            server->running_pid = pid;
+            VG_(close)(server->executor_pipe[1]);
+            wait_for_child(server);
+          }
         }
       }
     } else if ((fds[0].revents & VKI_POLLHUP) == VKI_POLLHUP) {
@@ -394,6 +387,9 @@ void SE_(stop_server)(SE_(cmd_server) * server) {
   VG_(close)(server->commander_r_fd);
   VG_(close)(server->commander_w_fd);
 
+  VG_(close)(server->executor_pipe[0]);
+  VG_(close)(server->executor_pipe[1]);
+
   server->running_pid = -1;
   server->current_state = SERVER_EXIT;
 }
@@ -401,4 +397,25 @@ void SE_(stop_server)(SE_(cmd_server) * server) {
 void SE_(free_server)(SE_(cmd_server) * server) {
   SE_(stop_server)(server);
   VG_(free)(server);
+}
+
+void SE_(reset_server)(SE_(cmd_server) * server) {
+  if (server->running_pid > 0) {
+    VG_(kill)(server->running_pid, VKI_SIGKILL);
+  }
+
+  server->running_pid = -1;
+  if (server->executor_pipe[0] > 0) {
+    VG_(close)(server->executor_pipe[0]);
+    server->executor_pipe[0] = -1;
+  }
+  if (server->executor_pipe[1] > 0) {
+    VG_(close)(server->executor_pipe[1]);
+    server->executor_pipe[1] = -1;
+  }
+  server->target_func_addr = (Addr)NULL;
+  server->using_fuzzed_io_vec = False;
+  server->using_existing_io_vec = False;
+
+  SE_(set_server_state)(server, SERVER_WAIT_FOR_CMD);
 }

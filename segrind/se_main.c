@@ -1,4 +1,3 @@
-
 /*--------------------------------------------------------------------*/
 /*--- SEgrind: The Software Ethology Tool.               se_main.c ---*/
 /*--------------------------------------------------------------------*/
@@ -26,16 +25,21 @@
 
 #include "se.h"
 #include "se_command_server.h"
+#include "se_io_vec.h"
 
 #include "pub_tool_basics.h"
 #include "pub_tool_libcproc.h"
+#include "pub_tool_mallocfree.h"
 #include "pub_tool_options.h"
+#include "pub_tool_oset.h"
 
 static Bool client_running = False;
 static ThreadId target_id = VG_INVALID_THREADID;
-SE_(cmd_server) * SE_(command_server) = NULL;
+static SE_(cmd_server) * SE_(command_server) = NULL;
+static OSet *syscalls = NULL;
+static VexGuestArchState initial_state;
 
-extern void VG_(set_IP)(ThreadId tid, Addr addr);
+static SizeT SE_(write_io_vec_to_cmd_server)(SE_(io_vec) * io_vec) {}
 
 static void SE_(post_clo_init)(void) {
   SE_(command_server) = SE_(make_server)(SE_(cmd_in), SE_(cmd_out));
@@ -53,35 +57,27 @@ static void SE_(thread_creation)(ThreadId tid, ThreadId child) {
     }
 
     /* Child executors arrive here */
-    VG_(close)(SE_(cmd_in));
-    VG_(close)(SE_(cmd_out));
-
     VG_(set_IP)(target_id, SE_(command_server)->target_func_addr);
+    syscalls =
+        VG_(OSetWord_Create)(VG_(malloc), SE_IOVEC_MALLOC_TYPE, VG_(free));
+    VG_(get_shadow_regs_area)
+    (target_id, (UChar *)&initial_state, 0, 0, sizeof(initial_state));
   }
 }
 
 static void SE_(thread_exit)(ThreadId tid) {
   if (client_running && tid == target_id) {
-    VG_(umsg)("Thread %u has exited\n", tid);
     client_running = False;
     target_id = VG_INVALID_THREADID;
+    if (SE_(command_server)->using_fuzzed_io_vec) {
+    }
   }
 }
 
 static void SE_(start_client_code)(ThreadId tid, ULong blocks_dispatched) {
   if (!client_running && tid == target_id) {
     client_running = True;
-    VG_(umsg)
-    ("(PID %d TID %d)\tThread %u is starting executing at instruction 0x%lx "
-     "with "
-     "blocks_dispatched=%llu\n",
-     VG_(getpid)(), VG_(gettid)(), tid, VG_(get_IP)(tid), blocks_dispatched);
   }
-}
-
-static void SE_(stop_client_code)(ThreadId tid, ULong blocks_dispatched) {
-  //    VG_(umsg)("Thread %u stopped executing at instruction 0x%lx with
-  //    blocks_dispatched=%llu\n", tid, VG_(get_IP)(tid), blocks_dispatched);
 }
 
 static IRSB *SE_(instrument)(VgCallbackClosure *closure, IRSB *bb,
@@ -89,7 +85,6 @@ static IRSB *SE_(instrument)(VgCallbackClosure *closure, IRSB *bb,
                              const VexGuestExtents *vge,
                              const VexArchInfo *archinfo_host, IRType gWordTy,
                              IRType hWordTy) {
-  //    if(target_function_running) {
   DiEpoch de = VG_(current_DiEpoch)();
   const HChar *fnname;
   VG_(get_fnname)(de, closure->nraddr, &fnname);
@@ -99,9 +94,19 @@ static IRSB *SE_(instrument)(VgCallbackClosure *closure, IRSB *bb,
    "%s\n",
    VG_(getpid)(), VG_(gettid)(), closure->tid, VG_(get_IP)(closure->tid),
    closure->nraddr, closure->readdr, fnname);
-  //    }
   return bb;
 }
+
+static void SE_(pre_syscall)(ThreadId tid, UInt syscallno, UWord *args,
+                             UInt nArgs) {
+  if (tid == target_id && client_running &&
+      !VG_(OSetWord_Contains)(syscalls, (UWord)syscallno)) {
+    VG_(OSetWord_Insert)(syscalls, (UWord)syscallno);
+  }
+}
+
+static void SE_(post_syscall)(ThreadId tid, UInt syscallno, UWord *args,
+                              UInt nArgs, SysRes res) {}
 
 static void SE_(fini)(Int exitcode) {
   if (SE_(cmd_in) > 0) {
@@ -137,9 +142,10 @@ static void SE_(pre_clo_init)(void) {
   (SE_(process_cmd_line_option), SE_(print_usage), SE_(print_debug_usage));
 
   VG_(track_start_client_code)(SE_(start_client_code));
-  VG_(track_stop_client_code)(SE_(stop_client_code));
   VG_(track_pre_thread_ll_create)(SE_(thread_creation));
   VG_(track_pre_thread_ll_exit)(SE_(thread_exit));
+
+  VG_(needs_syscall_wrapper)(SE_(pre_syscall), SE_(post_syscall));
 
   SE_(set_clo_defaults)();
 }

@@ -103,24 +103,25 @@
 #  define VG_STACK_REDZONE_SZB      0
 
 #elif defined(VGP_nanomips_linux)
-#  define VG_MIN_INSTR_SZB          2
-#  define VG_MAX_INSTR_SZB          6
-#  define VG_CLREQ_SZB             20
-#  define VG_STACK_REDZONE_SZB      0
+#define VG_MIN_INSTR_SZB 2
+#define VG_MAX_INSTR_SZB 6
+#define VG_CLREQ_SZB 20
+#define VG_STACK_REDZONE_SZB 0
 
 #else
-#  error Unknown platform
+#error Unknown platform
 #endif
 
 // Guest state accessors
 // Are mostly in the core_ header.
-//  Only these two are available to tools.
-Addr VG_(get_IP) ( ThreadId tid );
-Addr VG_(get_SP) ( ThreadId tid );
+Addr VG_(get_IP)(ThreadId tid);
+Addr VG_(get_SP)(ThreadId tid);
+void VG_(set_IP)(ThreadId tid, Addr encip);
+void VG_(set_SP)(ThreadId tid, Addr sp);
 
 // Get and set the shadow1 SP register
-Addr VG_(get_SP_s1) ( ThreadId tid );
-void VG_(set_SP_s1) ( ThreadId tid, Addr sp );
+Addr VG_(get_SP_s1)(ThreadId tid);
+void VG_(set_SP_s1)(ThreadId tid, Addr sp);
 
 // For get/set, 'area' is where the asked-for guest state will be copied
 // into/from.  If shadowNo == 0, the real (non-shadow) guest state is

@@ -174,25 +174,21 @@
 #define VG_O_FRAME_PTR        (offsetof(VexGuestArchState, VG_FRAME_PTR))
 #define VG_O_FPC_REG          (offsetof(VexGuestArchState, VG_FPC_REG))
 
-
 //-------------------------------------------------------------
 // Guest state accessors that are not visible to tools.  The only
 // ones that are visible are get_IP and get_SP.
 
-//Addr VG_(get_IP) ( ThreadId tid );  // in pub_tool_machine.h
-//Addr VG_(get_SP) ( ThreadId tid );  // in pub_tool_machine.h
-Addr VG_(get_FP) ( ThreadId tid );
+// Addr VG_(get_IP) ( ThreadId tid );  // in pub_tool_machine.h
+// Addr VG_(get_SP) ( ThreadId tid );  // in pub_tool_machine.h
+Addr VG_(get_FP)(ThreadId tid);
 
-void VG_(set_IP) ( ThreadId tid, Addr encip );
-void VG_(set_SP) ( ThreadId tid, Addr sp );
-
+// void VG_(set_IP) ( ThreadId tid, Addr encip );
+// void VG_(set_SP) ( ThreadId tid, Addr sp );
 
 //-------------------------------------------------------------
 // Get hold of the values needed for a stack unwind, for the specified
 // (client) thread.
-void VG_(get_UnwindStartRegs) ( /*OUT*/UnwindStartRegs* regs,
-                                ThreadId tid );
-
+void VG_(get_UnwindStartRegs)(/*OUT*/ UnwindStartRegs *regs, ThreadId tid);
 
 //-------------------------------------------------------------
 /* Details about the capabilities of the underlying (host) CPU.  These
