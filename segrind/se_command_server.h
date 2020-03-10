@@ -7,6 +7,22 @@
 
 #include "se_command.h"
 
+#ifndef VKI_POLLPRI
+#define VKI_POLLPRI 0x0002
+#endif
+#ifndef VKI_POLLOUT
+#define VKI_POLLOUT 0x0004
+#endif
+#ifndef VKI_POLLERR
+#define VKI_POLLERR 0x0008
+#endif
+#ifndef VKI_POLLHUP
+#define VKI_POLLHUP 0x0010
+#endif
+#ifndef VKI_POLLNVAL
+#define VKI_POLLNVAL 0x0020
+#endif
+
 typedef enum se_server_state {
   SERVER_INVALID,            /* Error State */
   SERVER_WAIT_FOR_START,     /* Server is initialized and ready to start */

@@ -40,7 +40,8 @@ void SE_(print_usage)(void) {
    "--out-pipe=<file>            Filename of the command server write pipe\n"
    "--log=<file>                 Filename of the log to write to\n"
    "--max-duration=<millis>      Max number of milliseconds to run before "
-   "executor process is killed\n");
+   "executor process is killed. Defaults to %u\n",
+   MAX_DURATION);
 }
 
 void SE_(print_debug_usage)(void) { SE_(print_usage)(); }

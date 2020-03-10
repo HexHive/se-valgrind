@@ -27,7 +27,7 @@ static SizeT write_to_commander(SE_(cmd_server) * server, SE_(cmd_msg) * msg,
   SizeT bytes_written = SE_(write_msg_to_fd)(server->commander_w_fd, msg);
   if (bytes_written <= 0) {
     VG_(umsg)
-    ("Failed to write %s message to commander: %llu\n",
+    ("Failed to write %s message to commander: %lu\n",
      SE_(msg_type_str)(msg->msg_type), bytes_written);
     bytes_written = 0;
   }
@@ -115,6 +115,7 @@ static Bool handle_set_target_cmd(SE_(cmd_msg) * msg,
   tl_assert(VG_(strlen)(func_name) > 0);
 
   SymAVMAs symAvma;
+  VG_(umsg)("Looking for function %s\n", func_name);
   if (VG_(lookup_symbol_SLOW)(VG_(current_DiEpoch()), "*", func_name,
                               &symAvma)) {
     server->target_func_addr = symAvma.main;
@@ -177,6 +178,10 @@ static Bool handle_command(SE_(cmd_server) * server) {
   return parent_should_fork;
 }
 
+/**
+ * @brief Wait for the child process to finish executing or timeout
+ * @param server
+ */
 static void wait_for_child(SE_(cmd_server) * server) {
   tl_assert(server);
   tl_assert(server->running_pid > 0);
@@ -242,16 +247,18 @@ void SE_(start_server)(SE_(cmd_server) * server) {
   do {
     struct vki_pollfd fds[1];
     fds[0].fd = server->commander_r_fd;
-    fds[0].events = VKI_POLLIN;
+    fds[0].events = VKI_POLLIN | VKI_POLLHUP | VKI_POLLPRI;
     fds[0].revents = 0;
 
     VG_(umsg)("Calling poll\n");
-    if (sr_isError(VG_(poll)(fds, 1, -1))) {
-      VG_(tool_panic)("VG_(poll) failed!");
+    if (sr_isError(
+            VG_(poll)(fds, sizeof(fds) / sizeof(struct vki_pollfd), -1))) {
+      VG_(tool_panic)("VG_(poll) failed!\n");
     }
     VG_(umsg)("VG_(poll) returned\n");
 
-    if ((fds[0].revents & VKI_POLLIN) == VKI_POLLIN) {
+    if (((fds[0].revents & VKI_POLLIN) == VKI_POLLIN) ||
+        ((fds[0].revents & VKI_POLLPRI) == VKI_POLLPRI)) {
       if (handle_command(server)) {
         Int pid = VG_(fork)();
         if (pid < 0) {
@@ -264,6 +271,9 @@ void SE_(start_server)(SE_(cmd_server) * server) {
           wait_for_child(server);
         }
       }
+    } else if ((fds[0].revents & VKI_POLLHUP) == VKI_POLLHUP) {
+      VG_(umsg)("Server write command pipe closed...\n");
+      return;
     }
   } while (server->current_state != SERVER_EXIT);
 }

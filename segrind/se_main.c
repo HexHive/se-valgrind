@@ -39,21 +39,23 @@ extern void VG_(set_IP)(ThreadId tid, Addr addr);
 
 static void SE_(post_clo_init)(void) {
   SE_(command_server) = SE_(make_server)(SE_(cmd_in), SE_(cmd_out));
-  VG_(umsg)("Starting Command Server\n");
-  SE_(start_server)(SE_(command_server));
-
-  if (SE_(command_server)->current_state != SERVER_EXECUTING) {
-    VG_(exit)(0);
-  }
-
-  /* Child executors arrive here */
-  VG_(close)(SE_(cmd_in));
-  VG_(close)(SE_(cmd_out));
+  tl_assert(SE_(command_server));
 }
 
 static void SE_(thread_creation)(ThreadId tid, ThreadId child) {
   if (!client_running) {
     target_id = child;
+    VG_(umsg)("Starting Command Server\n");
+    SE_(start_server)(SE_(command_server));
+
+    if (SE_(command_server)->current_state != SERVER_EXECUTING) {
+      VG_(exit)(0);
+    }
+
+    /* Child executors arrive here */
+    VG_(close)(SE_(cmd_in));
+    VG_(close)(SE_(cmd_out));
+
     VG_(set_IP)(target_id, SE_(command_server)->target_func_addr);
   }
 }
@@ -114,7 +116,7 @@ static void SE_(fini)(Int exitcode) {
     VG_(close)(SE_(log));
   }
 
-  if (SE_(command_server)->current_state != SERVER_EXIT) {
+  if (SE_(command_server)) {
     SE_(free_server)(SE_(command_server));
   }
 }
