@@ -23,11 +23,12 @@ typedef struct io_vec {
 } SE_(io_vec);
 
 /**
- * @brief Allocates a new io_vec which must be later freed
+ * @brief Allocates a new io_vec which must be later freed. Always returns valid
+ * io_vec.
  * @return
  */
-SE_(io_vec) * SE_(create_iovec)(void);
-void SE_(free_iovec)(SE_(io_vec) * io_vec);
+SE_(io_vec) * SE_(create_io_vec)(void);
+void SE_(free_io_vec)(SE_(io_vec) * io_vec);
 
 /**
  * @brief Writes io_vec to specified file descriptor
@@ -36,5 +37,12 @@ void SE_(free_iovec)(SE_(io_vec) * io_vec);
  * @return bytes written or 0 on error
  */
 SizeT SE_(write_io_vec_to_fd)(Int fd, SE_(io_vec) * io_vec);
+
+/**
+ * @brief Computes the number of bytes io_vec will write to a file descriptor
+ * @param io_vec
+ * @return
+ */
+SizeT SE_(io_vec_size)(SE_(io_vec) * io_vec);
 
 #endif // SE_VALGRIND_SE_IO_VEC_H

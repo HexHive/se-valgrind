@@ -13,13 +13,18 @@ include_directories(include/
 set(VALGRIND_TOOL_SRCS
         ${VALGRIND_TOOL_DIR}/clo.c
         ${VALGRIND_TOOL_DIR}/se_main.c
-        ${VALGRIND_TOOL_DIR}/se_command.c segrind/se_command_server.c segrind/se_command_server.h)
+        ${VALGRIND_TOOL_DIR}/se_command.c
+        ${VALGRIND_TOOL_DIR}/se_command_server.c
+        ${VALGRIND_TOOL_DIR}/se_io_vec.c
+        )
 
 set(VALGRIND_TOOL_INCS
         ${VALGRIND_TOOL_DIR}/se.h
         ${VALGRIND_TOOL_DIR}/se_command.h
         ${VALGRIND_INCS}
-        segrind/se_command_server.c segrind/se_command_server.h)
+        ${VALGRIND_TOOL_DIR}/se_command_server.h
+        ${VALGRIND_TOOL_DIR}/se_io_vec.h
+        )
 
 add_custom_command(
         OUTPUT ${VALGRIND_INSTALL_DIR}

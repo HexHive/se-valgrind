@@ -37,9 +37,34 @@ static Bool client_running = False;
 static ThreadId target_id = VG_INVALID_THREADID;
 static SE_(cmd_server) * SE_(command_server) = NULL;
 static OSet *syscalls = NULL;
-static VexGuestArchState initial_state;
+static OSet *coverage = NULL;
+static SE_(io_vec) *io_vec = NULL;
 
-static SizeT SE_(write_io_vec_to_cmd_server)(SE_(io_vec) * io_vec) {}
+static SizeT SE_(write_io_vec_to_cmd_server)(SE_(io_vec) * io_vec,
+                                             Bool free_io_vec) {
+  tl_assert(SE_(command_server));
+  tl_assert(io_vec);
+
+  SizeT bytes_written =
+      SE_(write_io_vec_to_fd)(SE_(command_server)->executor_pipe[1], io_vec);
+
+  if (free_io_vec) {
+    SE_(free_io_vec)(io_vec);
+  }
+  return bytes_written;
+}
+
+static void SE_(send_fuzzed_io_vec)(void) {
+  UWord syscall_num;
+  while (VG_(OSetWord_Next)(syscalls, &syscall_num)) {
+    VG_(OSetWord_Insert)(io_vec->system_calls, syscall_num);
+  }
+  VG_(get_shadow_regs_area)
+  (target_id, (UChar *)&io_vec->expected_state, 0, 0,
+   sizeof(io_vec->expected_state));
+
+  tl_assert(SE_(write_io_vec_to_cmd_server)(io_vec, True) > 0);
+}
 
 static void SE_(post_clo_init)(void) {
   SE_(command_server) = SE_(make_server)(SE_(cmd_in), SE_(cmd_out));
@@ -60,8 +85,15 @@ static void SE_(thread_creation)(ThreadId tid, ThreadId child) {
     VG_(set_IP)(target_id, SE_(command_server)->target_func_addr);
     syscalls =
         VG_(OSetWord_Create)(VG_(malloc), SE_IOVEC_MALLOC_TYPE, VG_(free));
-    VG_(get_shadow_regs_area)
-    (target_id, (UChar *)&initial_state, 0, 0, sizeof(initial_state));
+    if (SE_(command_server)->using_fuzzed_io_vec) {
+      if (io_vec) {
+        SE_(free_io_vec)(io_vec);
+      }
+      io_vec = SE_(create_io_vec);
+      VG_(get_shadow_regs_area)
+      (target_id, (UChar *)&io_vec->initial_state, 0, 0,
+       sizeof(io_vec->initial_state));
+    }
   }
 }
 
@@ -70,6 +102,7 @@ static void SE_(thread_exit)(ThreadId tid) {
     client_running = False;
     target_id = VG_INVALID_THREADID;
     if (SE_(command_server)->using_fuzzed_io_vec) {
+      SE_(send_fuzzed_io_vec)();
     }
   }
 }
