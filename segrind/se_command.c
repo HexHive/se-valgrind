@@ -98,3 +98,31 @@ const HChar *SE_(msg_type_str)(SE_(cmd_msg_t) type) {
     tl_assert(0);
   }
 }
+
+SE_(cmd_msg) * SE_(read_msg_from_fd)(Int fd) {
+  tl_assert(fd >= 0);
+
+  SE_(cmd_msg_t) msg_type;
+  if (VG_(read)(fd, &msg_type, sizeof(msg_type)) <= 0) {
+    return NULL;
+  }
+
+  SizeT len;
+  if (VG_(read)(fd, &len, sizeof(len)) <= 0) {
+    return NULL;
+  }
+
+  char *buf = NULL;
+  if (len > 0) {
+    buf = VG_(malloc)(SE_MSG_MALLOC_TYPE, len);
+    tl_assert(buf);
+    if (VG_(read)(fd, buf, len) <= 0) {
+      VG_(free)(buf);
+      return NULL;
+    }
+  }
+
+  SE_(cmd_msg) *result = SE_(create_cmd_msg)(msg_type, len, buf);
+  VG_(free)(buf);
+  return result;
+}

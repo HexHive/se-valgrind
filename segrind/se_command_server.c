@@ -47,29 +47,14 @@ static SizeT write_to_commander(SE_(cmd_server) * server, SE_(cmd_msg) * msg,
 static SE_(cmd_msg) * read_from_commander(SE_(cmd_server) * server) {
   tl_assert(server);
 
-  SE_(cmd_msg_t) msg_type;
-  if (VG_(read)(server->commander_r_fd, &msg_type, sizeof(msg_type)) <= 0) {
-    return NULL;
-  }
+  return SE_(read_msg_from_fd)(server->commander_r_fd);
+}
 
-  SizeT len;
-  if (VG_(read)(server->commander_r_fd, &len, sizeof(len)) <= 0) {
-    return NULL;
-  }
+static SE_(cmd_msg) * read_from_executor(SE_(cmd_server) * server) {
+  tl_assert(server);
+  tl_assert(server->running_pid > 0);
 
-  char *buf = NULL;
-  if (len > 0) {
-    buf = VG_(malloc)(SE_MSG_MALLOC_TYPE, len);
-    tl_assert(buf);
-    if (VG_(read)(server->commander_r_fd, buf, len) <= 0) {
-      VG_(free)(buf);
-      return NULL;
-    }
-  }
-
-  SE_(cmd_msg) *result = SE_(create_cmd_msg)(msg_type, len, buf);
-  VG_(free)(buf);
-  return result;
+  return SE_(read_msg_from_fd)(server->executor_pipe[0]);
 }
 
 /**
@@ -200,7 +185,43 @@ static void wait_for_child(SE_(cmd_server) * server) {
   tl_assert(server);
   tl_assert(server->running_pid > 0);
 
+  Int status;
+  Int wait_result;
 
+  struct vki_pollfd fds[1];
+  fds[0].fd = server->executor_pipe[0];
+  fds[0].events = VKI_POLLIN | VKI_POLLHUP | VKI_POLLPRI;
+  fds[0].revents = 0;
+  SysRes result =
+      VG_(poll)(fds, sizeof(fds) / sizeof(struct vki_pollfd), SE_(MaxDuration));
+  if (sr_Res(result) == 0) {
+    if (sr_Err(result)) {
+      report_error(server, "Executor poll failed");
+    } else {
+      report_error(server, "Child timed out");
+    }
+
+    goto cleanup;
+  }
+
+  if (((fds[0].revents & VKI_POLLIN) == VKI_POLLIN) ||
+      ((fds[0].revents & VKI_POLLPRI) == VKI_POLLPRI)) {
+    SE_(cmd_msg) *cmd_msg = read_from_executor(server);
+    if (cmd_msg == NULL) {
+      report_error(server, "Error reading executor pipe");
+    } else {
+      write_to_commander(server, cmd_msg, True);
+    }
+    goto cleanup;
+  }
+
+cleanup:
+  wait_result = VG_(waitpid)(server->running_pid, &status, VKI_WNOHANG);
+  if (wait_result < 0 || (!WIFEXITED(status) && !WIFSIGNALED(status))) {
+    VG_(kill)(server->running_pid, VKI_SIGKILL);
+  }
+  server->running_pid = -1;
+  VG_(close)(server->executor_pipe[0]);
 }
 
 SE_(cmd_server) * SE_(make_server)(Int commander_r_fd, Int commander_w_fd) {
@@ -258,19 +279,19 @@ void SE_(start_server)(SE_(cmd_server) * server) {
               SE_(stop_server)(server);
               return;
             }
-          }
-
-          if (pid == 0) {
-            VG_(close)(server->executor_pipe[0]);
-            VG_(close)(server->commander_r_fd);
-            VG_(close)(server->commander_w_fd);
-
-            /* Child process exits and starts executing target code */
-            return;
           } else {
-            server->running_pid = pid;
-            VG_(close)(server->executor_pipe[1]);
-            wait_for_child(server);
+            if (pid == 0) {
+              VG_(close)(server->executor_pipe[0]);
+              VG_(close)(server->commander_r_fd);
+              VG_(close)(server->commander_w_fd);
+
+              /* Child process exits and starts executing target code */
+              return;
+            } else {
+              server->running_pid = pid;
+              VG_(close)(server->executor_pipe[1]);
+              wait_for_child(server);
+            }
           }
         }
       }

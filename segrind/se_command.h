@@ -51,6 +51,14 @@ void SE_(free_msg)(SE_(cmd_msg) * msg);
  */
 SizeT SE_(write_msg_to_fd)(Int fd, const SE_(cmd_msg) * msg);
 
+/**
+ * @brief Reads a single message from the specified file descriptor, which must
+ * be freed later
+ * @param fd
+ * @return SE_(cmd_msg) or NULL on error
+ */
+SE_(cmd_msg) * SE_(read_msg_from_fd)(Int fd);
+
 const HChar *SE_(msg_type_str)(SE_(cmd_msg_t) type);
 
 typedef enum cmd_result_t_ {

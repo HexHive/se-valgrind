@@ -45,7 +45,7 @@ typedef struct {
   Addr target_func_addr;
   Int executor_pipe[2];
   Bool using_fuzzed_io_vec;
-  Bool using_existing_io_vec
+  Bool using_existing_io_vec;
 } SE_(cmd_server);
 
 /**

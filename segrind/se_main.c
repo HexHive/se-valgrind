@@ -38,7 +38,7 @@ static ThreadId target_id = VG_INVALID_THREADID;
 static SE_(cmd_server) * SE_(command_server) = NULL;
 static OSet *syscalls = NULL;
 static OSet *coverage = NULL;
-static SE_(io_vec) *io_vec = NULL;
+static SE_(io_vec) *fuzzed_io_vec = NULL;
 
 static SizeT SE_(write_io_vec_to_cmd_server)(SE_(io_vec) * io_vec,
                                              Bool free_io_vec) {
@@ -57,13 +57,13 @@ static SizeT SE_(write_io_vec_to_cmd_server)(SE_(io_vec) * io_vec,
 static void SE_(send_fuzzed_io_vec)(void) {
   UWord syscall_num;
   while (VG_(OSetWord_Next)(syscalls, &syscall_num)) {
-    VG_(OSetWord_Insert)(io_vec->system_calls, syscall_num);
+    VG_(OSetWord_Insert)(fuzzed_io_vec->system_calls, syscall_num);
   }
   VG_(get_shadow_regs_area)
-  (target_id, (UChar *)&io_vec->expected_state, 0, 0,
-   sizeof(io_vec->expected_state));
+  (target_id, (UChar *)&fuzzed_io_vec->expected_state, 0, 0,
+   sizeof(fuzzed_io_vec->expected_state));
 
-  tl_assert(SE_(write_io_vec_to_cmd_server)(io_vec, True) > 0);
+  tl_assert(SE_(write_io_vec_to_cmd_server)(fuzzed_io_vec, True) > 0);
 }
 
 static void SE_(post_clo_init)(void) {
@@ -86,13 +86,13 @@ static void SE_(thread_creation)(ThreadId tid, ThreadId child) {
     syscalls =
         VG_(OSetWord_Create)(VG_(malloc), SE_IOVEC_MALLOC_TYPE, VG_(free));
     if (SE_(command_server)->using_fuzzed_io_vec) {
-      if (io_vec) {
-        SE_(free_io_vec)(io_vec);
+      if (fuzzed_io_vec) {
+        SE_(free_io_vec)(fuzzed_io_vec);
       }
-      io_vec = SE_(create_io_vec);
+      fuzzed_io_vec = SE_(create_io_vec)();
       VG_(get_shadow_regs_area)
-      (target_id, (UChar *)&io_vec->initial_state, 0, 0,
-       sizeof(io_vec->initial_state));
+      (target_id, (UChar *)&fuzzed_io_vec->initial_state, 0, 0,
+       sizeof(fuzzed_io_vec->initial_state));
     }
   }
 }

@@ -11,7 +11,7 @@ include_directories(include/
         )
 
 set(VALGRIND_TOOL_SRCS
-        ${VALGRIND_TOOL_DIR}/clo.c
+        ${VALGRIND_TOOL_DIR}/se_clo.c
         ${VALGRIND_TOOL_DIR}/se_main.c
         ${VALGRIND_TOOL_DIR}/se_command.c
         ${VALGRIND_TOOL_DIR}/se_command_server.c
