@@ -89,7 +89,7 @@ static void SE_(thread_creation)(ThreadId tid, ThreadId child) {
       if (fuzzed_io_vec) {
         SE_(free_io_vec)(fuzzed_io_vec);
       }
-      fuzzed_io_vec = SE_(create_io_vec)();
+      fuzzed_io_vec = SE_(create_io_vec)()();
       VG_(get_shadow_regs_area)
       (target_id, (UChar *)&fuzzed_io_vec->initial_state, 0, 0,
        sizeof(fuzzed_io_vec->initial_state));

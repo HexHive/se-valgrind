@@ -42,7 +42,7 @@ static SizeT write_to_commander(SE_(cmd_server) * server, SE_(cmd_msg) * msg,
 /**
  * @brief Reads a single command message from the read command pipe
  * @param server
- * @return Command message or NULL on error;
+ * @return Command message or NULL on error
  */
 static SE_(cmd_msg) * read_from_commander(SE_(cmd_server) * server) {
   tl_assert(server);
@@ -50,6 +50,11 @@ static SE_(cmd_msg) * read_from_commander(SE_(cmd_server) * server) {
   return SE_(read_msg_from_fd)(server->commander_r_fd);
 }
 
+/**
+ * @brief Reads a single message from the executor pipe
+ * @param server
+ * @return Command message or NULL on error
+ */
 static SE_(cmd_msg) * read_from_executor(SE_(cmd_server) * server) {
   tl_assert(server);
   tl_assert(server->running_pid > 0);
