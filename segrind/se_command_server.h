@@ -43,6 +43,7 @@ typedef struct {
   Int commander_r_fd, commander_w_fd;
   Int running_pid;
   Addr target_func_addr;
+  Addr main_addr;
   Int executor_pipe[2];
   Bool using_fuzzed_io_vec;
   Bool using_existing_io_vec;

@@ -7,7 +7,7 @@
 
 #define SE_(str) VGAPPEND(vgSegrind_, str)
 
-#define MAX_DURATION ((UInt)1000)
+#define MAX_DURATION ((UInt)10000)
 
 #include "pub_tool_basics.h"
 #include "pub_tool_libcassert.h"
@@ -23,6 +23,8 @@ Int SE_(cmd_in), SE_(cmd_out), SE_(log);
 
 /* Number of milliseconds to run a function for */
 UInt SE_(MaxDuration);
+
+Addr SE_(user_main);
 
 /*****************************************************
  * Command line parsing

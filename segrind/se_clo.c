@@ -9,6 +9,7 @@ UInt SE_(MaxDuration) = MAX_DURATION;
 Int SE_(cmd_in) = -1;
 Int SE_(cmd_out) = -1;
 Int SE_(log) = -1;
+Addr SE_(user_main) = 0;
 
 Bool SE_(process_cmd_line_option)(const HChar *arg) {
   const HChar *tmp_str;
@@ -24,12 +25,17 @@ Bool SE_(process_cmd_line_option)(const HChar *arg) {
       VG_(fmsg_bad_option(arg, "Could not open out-pipe\n"));
     }
   } else if (VG_STR_CLO(arg, "--log", tmp_str)) {
+    VG_(umsg)("Opening %s\n", tmp_str);
     if ((SE_(log) = VG_(fd_open)(tmp_str, VKI_O_WRONLY, 0)) < 0) {
       VG_(fmsg_bad_option(arg, "Could not open log\n"));
     }
   } else if (VG_INT_CLO(arg, "--max-duration", SE_(MaxDuration))) {
     if (SE_(MaxDuration) <= 0) {
       VG_(fmsg_bad_option(arg, "max-duration must be larger than zero"));
+    }
+  } else if(VG_INT_CLO(arg, "--main-addr", SE_(user_main))) {
+    if(SE_(user_main) <= 0) {
+      VG_(fmsg_bad_option(arg, "Invalid main address"));
     }
   }
 

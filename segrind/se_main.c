@@ -26,6 +26,7 @@
 #include "se.h"
 #include "se_command_server.h"
 #include "se_io_vec.h"
+#include <libvex_ir.h>
 
 #include "pub_tool_basics.h"
 #include "pub_tool_guest.h"
@@ -33,11 +34,14 @@
 #include "pub_tool_mallocfree.h"
 #include "pub_tool_options.h"
 #include "pub_tool_oset.h"
+#include "pub_tool_xarray.h"
 
 static Bool client_running = False;
+static Bool main_replaced = False;
 static ThreadId target_id = VG_INVALID_THREADID;
 static SE_(cmd_server) * SE_(command_server) = NULL;
 static OSet *syscalls = NULL;
+static XArray *program_states = NULL;
 static SE_(io_vec) *fuzzed_io_vec = NULL;
 
 static SizeT SE_(write_io_vec_to_cmd_server)(SE_(io_vec) * io_vec,
@@ -82,9 +86,10 @@ static void SE_(thread_creation)(ThreadId tid, ThreadId child) {
     }
 
     /* Child executors arrive here */
-    VG_(set_IP)(target_id, SE_(command_server)->target_func_addr);
     syscalls =
         VG_(OSetWord_Create)(VG_(malloc), SE_IOVEC_MALLOC_TYPE, VG_(free));
+    program_states = VG_(newXA)(VG_(malloc), SE_IOVEC_MALLOC_TYPE, VG_(free),
+                                sizeof(VexGuestArchState));
     if (SE_(command_server)->using_fuzzed_io_vec) {
       if (fuzzed_io_vec) {
         SE_(free_io_vec)(fuzzed_io_vec);
@@ -105,10 +110,16 @@ static void SE_(thread_creation)(ThreadId tid, ThreadId child) {
 static void SE_(thread_exit)(ThreadId tid) {
   if (client_running && tid == target_id) {
     client_running = False;
+    main_replaced = False;
     target_id = VG_INVALID_THREADID;
     if (SE_(command_server)->using_fuzzed_io_vec) {
       SE_(send_fuzzed_io_vec)();
     }
+
+    VG_(deleteXA)(program_states);
+    program_states = NULL;
+    VG_(OSetWord_Destroy)(syscalls);
+    syscalls = NULL;
   }
 }
 
@@ -118,21 +129,123 @@ static void SE_(start_client_code)(ThreadId tid, ULong blocks_dispatched) {
   }
 }
 
+static void record_current_state(void) {
+  if (client_running && main_replaced) {
+    VexGuestArchState current_state;
+    VG_(get_shadow_regs_area)
+    (target_id, (UChar *)&current_state, 0, 0, sizeof(current_state));
+    const HChar *fnname;
+    VG_(get_fnname)(VG_(current_DiEpoch)(), VG_(get_IP)(target_id), &fnname);
+    VG_(umsg)
+    ("\tRecording state for instruction at 0x%lx (%s)\n",
+     VG_(get_IP)(target_id), fnname);
+    VG_(addToXA)(program_states, &current_state);
+  }
+}
+
+static IRSB *SE_(instrument_target)(IRSB *bb) {
+  tl_assert(client_running);
+  tl_assert(main_replaced);
+
+  IRSB *bbOut;
+  Int i;
+  IRDirty *di;
+
+  bbOut = deepCopyIRSBExceptStmts(bb);
+
+  i = 0;
+  while (i < bb->stmts_used && bb->stmts[i]->tag != Ist_IMark) {
+    addStmtToIRSB(bbOut, bb->stmts[i]);
+  }
+
+  for (/* use current i */; i < bb->stmts_used; i++) {
+    IRStmt *stmt = bb->stmts[i];
+    if (!stmt)
+      continue;
+
+    switch (stmt->tag) {
+    case Ist_IMark:
+      di = unsafeIRDirty_0_N(0, "record_current_state",
+                             VG_(fnptr_to_fnentry)(&record_current_state),
+                             mkIRExprVec_0());
+      addStmtToIRSB(bbOut, stmt);
+      addStmtToIRSB(bbOut, IRStmt_Dirty(di));
+      break;
+    default:
+      addStmtToIRSB(bbOut, stmt);
+      break;
+    }
+  }
+  return bbOut;
+}
+
+static IRSB *SE_(replace_main_if_found)(IRSB *bb) {
+  tl_assert(client_running);
+  tl_assert(!main_replaced);
+
+  IRSB *bbOut = bb;
+  IRConst *new_dst;
+  IRExpr *new_guard;
+  Int i;
+
+  IRJumpKind bb_jump = bb->jumpkind;
+  if (bb_jump == Ijk_Call) {
+    bbOut = deepCopyIRSBExceptStmts(bb);
+    i = 0;
+    while (i < bb->stmts_used && bb->stmts[i]->tag != Ist_IMark) {
+      addStmtToIRSB(bbOut, bb->stmts[i]);
+    }
+
+    for (/* use current i */; i < bb->stmts_used; i++) {
+      IRStmt *stmt = bb->stmts[i];
+      if (!stmt)
+        continue;
+
+      switch (stmt->tag) {
+      case Ist_Exit:
+        VG_(umsg)("Exit dst: %llx\n", stmt->Ist.Exit.dst->Ico.U64);
+        if (stmt->Ist.Exit.dst->Ico.U64 == SE_(command_server)->main_addr) {
+          VG_(umsg)("Replacing main!\n");
+          new_dst = IRConst_U64((ULong)SE_(command_server)->target_func_addr);
+          new_guard = deepCopyIRExpr(stmt->Ist.Exit.guard);
+          stmt =
+              IRStmt_Exit(new_guard, bb_jump, new_dst, stmt->Ist.Exit.offsIP);
+          addStmtToIRSB(bbOut, stmt);
+        } else {
+          addStmtToIRSB(bbOut, stmt);
+        }
+        break;
+      default:
+        addStmtToIRSB(bbOut, stmt);
+        break;
+      }
+    }
+  }
+
+  return bbOut;
+}
+
 static IRSB *SE_(instrument)(VgCallbackClosure *closure, IRSB *bb,
                              const VexGuestLayout *layout,
                              const VexGuestExtents *vge,
                              const VexArchInfo *archinfo_host, IRType gWordTy,
                              IRType hWordTy) {
-  DiEpoch de = VG_(current_DiEpoch)();
-  const HChar *fnname;
-  VG_(get_fnname)(de, closure->nraddr, &fnname);
-  VG_(umsg)
-  ("(PID %d TID %d)\tThread %u (IP = 0x%lx) requested translation of block "
-   "starting at 0x%lx (0x%lx) in function "
-   "%s\n",
-   VG_(getpid)(), VG_(gettid)(), closure->tid, VG_(get_IP)(closure->tid),
-   closure->nraddr, closure->readdr, fnname);
-  return bb;
+  IRSB *bbOut = bb;
+
+  if (client_running && main_replaced) {
+    bbOut = SE_(instrument_target)(bb);
+  } else if (client_running && !main_replaced) {
+    bbOut = SE_(replace_main_if_found)(bb);
+  }
+
+  if (!main_replaced &&
+      VG_(get_IP)(target_id) == SE_(command_server)->main_addr) {
+    ppIRSB(prev);
+    ppIRSB(bbOut);
+    tl_assert2(0, "ERROR: Reached main and it was not replaced!\n");
+  }
+
+  return bbOut;
 }
 
 static void SE_(pre_syscall)(ThreadId tid, UInt syscallno, UWord *args,

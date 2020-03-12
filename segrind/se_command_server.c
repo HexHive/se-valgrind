@@ -144,12 +144,11 @@ static Bool fuzz_program_state(SE_(cmd_server) * server) {
     return False;
   }
 
-  UInt seed = (VG_(getpid)() << 9) ^ VG_(getppid)();
-
   VexGuestArchState guest_state;
   VG_(get_shadow_regs_area)
   (server->executor_tid, (UChar *)&guest_state, 0, 0, sizeof(guest_state));
 #if defined(VGA_amd64)
+  UInt seed = (VG_(getpid)() << 9) ^ VG_(getppid)();
   guest_state.guest_RDI = VG_(random)(&seed);
   VG_(umsg)("Setting RDI = 0x%llx\n", guest_state.guest_RDI);
 #endif
@@ -165,7 +164,6 @@ static Bool fuzz_program_state(SE_(cmd_server) * server) {
  * @return True if parent should fork because an Execute command was issued
  */
 static Bool handle_command(SE_(cmd_server) * server) {
-  VG_(umsg)("Handling command\n");
   SE_(cmd_msg) *cmd_msg = read_from_commander(server);
   if (cmd_msg == NULL) {
     report_error(server, "Failed to read message");
@@ -242,7 +240,7 @@ static void wait_for_child(SE_(cmd_server) * server) {
   struct vki_pollfd fds[1];
   fds[0].fd = server->executor_pipe[0];
   fds[0].events = VKI_POLLIN | VKI_POLLHUP | VKI_POLLPRI;
-  VG_(umsg)("Waiting for child for %d ms\n", SE_(MaxDuration));
+  VG_(umsg)("Waiting for child for %u ms\n", SE_(MaxDuration));
   fds[0].revents = 0;
   SysRes result =
       VG_(poll)(fds, sizeof(fds) / sizeof(struct vki_pollfd), SE_(MaxDuration));
@@ -310,6 +308,21 @@ void SE_(start_server)(SE_(cmd_server) * server, ThreadId executor_tid) {
 
   server->executor_tid = executor_tid;
 
+  SymAVMAs symAvma;
+  VG_(umsg)("Looking for function main\n");
+  if (VG_(lookup_symbol_SLOW)(VG_(current_DiEpoch()), "*", "main", &symAvma)) {
+    VG_(umsg)("Found main at 0x%lx\n", symAvma.main);
+    if (SE_(user_main) > 0 && SE_(user_main) != symAvma.main) {
+      VG_(umsg)
+      ("WARNING: User specified main (0x%lx) is different from Valgrind found "
+       "main (0x%lx)! Using user specified main...",
+       SE_(user_main), symAvma.main);
+      server->main_addr = SE_(user_main);
+    } else {
+      server->main_addr = symAvma.main;
+    }
+  }
+
   SE_(set_server_state)(server, SERVER_START);
 
   SE_(cmd_msg) *ready_msg = SE_(create_cmd_msg)(SEMSG_READY, 0, NULL);
@@ -332,7 +345,6 @@ void SE_(start_server)(SE_(cmd_server) * server, ThreadId executor_tid) {
             VG_(poll)(fds, sizeof(fds) / sizeof(struct vki_pollfd), -1))) {
       VG_(tool_panic)("VG_(poll) failed!\n");
     }
-    VG_(umsg)("VG_(poll) returned\n");
 
     if (((fds[0].revents & VKI_POLLIN) == VKI_POLLIN) ||
         ((fds[0].revents & VKI_POLLPRI) == VKI_POLLPRI)) {
