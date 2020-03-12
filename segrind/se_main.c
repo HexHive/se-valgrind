@@ -28,6 +28,7 @@
 #include "se_io_vec.h"
 
 #include "pub_tool_basics.h"
+#include "pub_tool_guest.h"
 #include "pub_tool_libcproc.h"
 #include "pub_tool_mallocfree.h"
 #include "pub_tool_options.h"
@@ -37,7 +38,6 @@ static Bool client_running = False;
 static ThreadId target_id = VG_INVALID_THREADID;
 static SE_(cmd_server) * SE_(command_server) = NULL;
 static OSet *syscalls = NULL;
-static OSet *coverage = NULL;
 static SE_(io_vec) *fuzzed_io_vec = NULL;
 
 static SizeT SE_(write_io_vec_to_cmd_server)(SE_(io_vec) * io_vec,
@@ -75,7 +75,7 @@ static void SE_(thread_creation)(ThreadId tid, ThreadId child) {
   if (!client_running) {
     target_id = child;
     VG_(umsg)("Starting Command Server\n");
-    SE_(start_server)(SE_(command_server));
+    SE_(start_server)(SE_(command_server), child);
 
     if (SE_(command_server)->current_state != SERVER_EXECUTING) {
       VG_(exit)(0);
@@ -89,11 +89,16 @@ static void SE_(thread_creation)(ThreadId tid, ThreadId child) {
       if (fuzzed_io_vec) {
         SE_(free_io_vec)(fuzzed_io_vec);
       }
-      fuzzed_io_vec = SE_(create_io_vec)()();
+      fuzzed_io_vec = SE_(create_io_vec)();
       VG_(get_shadow_regs_area)
       (target_id, (UChar *)&fuzzed_io_vec->initial_state, 0, 0,
        sizeof(fuzzed_io_vec->initial_state));
     }
+#if defined(VGA_amd64)
+    VG_(umsg)
+    ("About to execute 0x%lx with RDI = 0x%llx\n", VG_(get_IP)(target_id),
+     fuzzed_io_vec->initial_state.guest_RDI);
+#endif
   }
 }
 

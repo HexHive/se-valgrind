@@ -46,6 +46,7 @@ typedef struct {
   Int executor_pipe[2];
   Bool using_fuzzed_io_vec;
   Bool using_existing_io_vec;
+  ThreadId executor_tid;
 } SE_(cmd_server);
 
 /**
@@ -59,8 +60,9 @@ SE_(cmd_server) * SE_(make_server)(Int commander_r_fd, Int commander_w_fd);
 /**
  * @brief Starts listening for commands
  * @param server
+ * @param executorTid
  */
-void SE_(start_server)(SE_(cmd_server) * server);
+void SE_(start_server)(SE_(cmd_server) * server, ThreadId executor_tid);
 
 /**
  * @brief Kills any running process, performs exiting tasks, and sets the

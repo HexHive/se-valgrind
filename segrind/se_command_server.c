@@ -4,9 +4,12 @@
 
 #include "se_command_server.h"
 
+#include "pub_tool_guest.h"
 #include "pub_tool_libcproc.h"
 #include "pub_tool_libcsignal.h"
+#include "pub_tool_machine.h"
 #include "pub_tool_mallocfree.h"
+#include "pub_tool_threadstate.h"
 #include "pub_tool_vki.h"
 
 #include "../coregrind/pub_core_debuginfo.h"
@@ -118,12 +121,42 @@ static Bool handle_set_target_cmd(SE_(cmd_msg) * msg,
   VG_(umsg)("Looking for function %s\n", func_name);
   if (VG_(lookup_symbol_SLOW)(VG_(current_DiEpoch()), "*", func_name,
                               &symAvma)) {
-    server->target_func_addr = symAvma.main;
-    return True;
-  } else {
-    server->target_func_addr = 0;
+    if (SE_(set_server_state)(server, SERVER_WAIT_FOR_CMD)) {
+      VG_(umsg)("Found %s at 0x%lx\n", func_name, symAvma.main);
+      server->target_func_addr = symAvma.main;
+      return True;
+    }
+  }
+
+  server->target_func_addr = 0;
+  return False;
+}
+
+/**
+ * @brief Fuzzes and sets the guest program state
+ * @param server
+ * @return True if program state was successfully fuzzed
+ */
+static Bool fuzz_program_state(SE_(cmd_server) * server) {
+  tl_assert(server);
+
+  if (!SE_(set_server_state)(server, SERVER_FUZZING)) {
     return False;
   }
+
+  UInt seed = (VG_(getpid)() << 9) ^ VG_(getppid)();
+
+  VexGuestArchState guest_state;
+  VG_(get_shadow_regs_area)
+  (server->executor_tid, (UChar *)&guest_state, 0, 0, sizeof(guest_state));
+#if defined(VGA_amd64)
+  guest_state.guest_RDI = VG_(random)(&seed);
+  VG_(umsg)("Setting RDI = 0x%llx\n", guest_state.guest_RDI);
+#endif
+  VG_(set_shadow_regs_area)
+  (server->executor_tid, 0, 0, sizeof(guest_state), (UChar *)&guest_state);
+
+  return SE_(set_server_state)(server, SERVER_WAITING_TO_EXECUTE);
 }
 
 /**
@@ -154,12 +187,24 @@ static Bool handle_command(SE_(cmd_server) * server) {
     msg_handled = True;
     break;
   case SEMSG_FUZZ:
-    /* TODO: Implement me when IOVecs are ported */
-    server->using_fuzzed_io_vec = True;
-    server->using_existing_io_vec = False;
+    msg_handled = fuzz_program_state(server);
+    if (msg_handled) {
+      server->using_fuzzed_io_vec = True;
+      server->using_existing_io_vec = False;
+      report_success(server, 0, NULL);
+    }
     break;
   case SEMSG_EXECUTE:
     msg_handled = SE_(set_server_state)(server, SERVER_EXECUTING);
+    if (!msg_handled) {
+      VG_(umsg)
+      ("Could not set execution state from %s\n",
+       SE_(server_state_str)(server->current_state));
+    } else {
+      VG_(umsg)
+      ("Server state set to %s\n",
+       SE_(server_state_str)(server->current_state));
+    }
     /* We want to fork a new process to actually execute the target code */
     parent_should_fork = True;
     break;
@@ -189,6 +234,7 @@ static Bool handle_command(SE_(cmd_server) * server) {
 static void wait_for_child(SE_(cmd_server) * server) {
   tl_assert(server);
   tl_assert(server->running_pid > 0);
+  tl_assert(server->current_state == SERVER_EXECUTING);
 
   Int status;
   Int wait_result;
@@ -196,13 +242,16 @@ static void wait_for_child(SE_(cmd_server) * server) {
   struct vki_pollfd fds[1];
   fds[0].fd = server->executor_pipe[0];
   fds[0].events = VKI_POLLIN | VKI_POLLHUP | VKI_POLLPRI;
+  VG_(umsg)("Waiting for child for %d ms\n", SE_(MaxDuration));
   fds[0].revents = 0;
   SysRes result =
       VG_(poll)(fds, sizeof(fds) / sizeof(struct vki_pollfd), SE_(MaxDuration));
   if (sr_Res(result) == 0) {
     if (sr_Err(result)) {
+      VG_(umsg)("Poll failed\n");
       report_error(server, "Executor poll failed");
     } else {
+      VG_(umsg)("Poll timed out\n");
       report_error(server, "Child timed out");
     }
 
@@ -213,20 +262,27 @@ static void wait_for_child(SE_(cmd_server) * server) {
       ((fds[0].revents & VKI_POLLPRI) == VKI_POLLPRI)) {
     SE_(cmd_msg) *cmd_msg = read_from_executor(server);
     if (cmd_msg == NULL) {
+      VG_(umsg)("Reading from executor failed\n");
       report_error(server, "Error reading executor pipe");
     } else {
+      VG_(umsg)("Got message from executor\n");
       write_to_commander(server, cmd_msg, True);
     }
     goto cleanup;
+  } else if ((fds[0].revents & VKI_POLLHUP) == VKI_POLLHUP) {
+    VG_(umsg)("Hung up\n");
   }
+  report_error(server, NULL);
 
 cleanup:
+  VG_(umsg)("Cleaning up\n");
   wait_result = VG_(waitpid)(server->running_pid, &status, VKI_WNOHANG);
   if (wait_result < 0 || (!WIFEXITED(status) && !WIFSIGNALED(status))) {
     VG_(kill)(server->running_pid, VKI_SIGKILL);
   }
   server->running_pid = -1;
   VG_(close)(server->executor_pipe[0]);
+  SE_(set_server_state)(server, SERVER_WAIT_FOR_CMD);
 }
 
 SE_(cmd_server) * SE_(make_server)(Int commander_r_fd, Int commander_w_fd) {
@@ -246,9 +302,15 @@ SE_(cmd_server) * SE_(make_server)(Int commander_r_fd, Int commander_w_fd) {
   return cmd_server;
 }
 
-void SE_(start_server)(SE_(cmd_server) * server) {
+void SE_(start_server)(SE_(cmd_server) * server, ThreadId executor_tid) {
   tl_assert(server);
   tl_assert(server->current_state == SERVER_WAIT_FOR_START);
+  tl_assert(executor_tid != VG_INVALID_THREADID);
+  tl_assert(executor_tid != VG_(get_running_tid)());
+
+  server->executor_tid = executor_tid;
+
+  SE_(set_server_state)(server, SERVER_START);
 
   SE_(cmd_msg) *ready_msg = SE_(create_cmd_msg)(SEMSG_READY, 0, NULL);
   if (write_to_commander(server, ready_msg, True) == 0) {
@@ -263,7 +325,9 @@ void SE_(start_server)(SE_(cmd_server) * server) {
     fds[0].events = VKI_POLLIN | VKI_POLLHUP | VKI_POLLPRI;
     fds[0].revents = 0;
 
-    VG_(umsg)("Calling poll\n");
+    VG_(umsg)
+    ("Current server status: %s\n",
+     SE_(server_state_str)(server->current_state));
     if (sr_isError(
             VG_(poll)(fds, sizeof(fds) / sizeof(struct vki_pollfd), -1))) {
       VG_(tool_panic)("VG_(poll) failed!\n");
@@ -273,32 +337,39 @@ void SE_(start_server)(SE_(cmd_server) * server) {
     if (((fds[0].revents & VKI_POLLIN) == VKI_POLLIN) ||
         ((fds[0].revents & VKI_POLLPRI) == VKI_POLLPRI)) {
       if (handle_command(server)) {
+        VG_(umsg)
+        ("Server forking with status %s\n",
+         SE_(server_state_str)(server->current_state));
+        if (!SE_(set_server_state)(server, SERVER_EXECUTING)) {
+          report_error(server, "Invalid server state");
+          continue;
+        }
+        if (VG_(pipe)(server->executor_pipe) < 0) {
+          report_error(server, "Pipe failed");
+          continue;
+        }
+
         Int pid = VG_(fork)();
         if (pid < 0) {
           report_error(server, "Failed to fork child process");
         } else {
-          if (VG_(pipe)(server->executor_pipe) < 0) {
-            if (pid > 0) {
-              report_error(server, "Executor pipe failed");
-            } else {
-              SE_(stop_server)(server);
-              return;
-            }
-          } else {
-            if (pid == 0) {
-              VG_(close)(server->executor_pipe[0]);
-              VG_(close)(server->commander_r_fd);
-              VG_(close)(server->commander_w_fd);
+          if (pid == 0) {
+            VG_(close)(server->executor_pipe[0]);
+            VG_(close)(server->commander_r_fd);
+            VG_(close)(server->commander_w_fd);
 
-              /* Child process exits and starts executing target code */
-              return;
-            } else {
-              server->running_pid = pid;
-              VG_(close)(server->executor_pipe[1]);
-              wait_for_child(server);
-            }
+            /* Child process exits and starts executing target code */
+            return;
+          } else {
+            server->running_pid = pid;
+            VG_(close)(server->executor_pipe[1]);
+            wait_for_child(server);
           }
         }
+      } else {
+        VG_(umsg)
+        ("Server NOT forking with status %s\n",
+         SE_(server_state_str)(server->current_state));
       }
     } else if ((fds[0].revents & VKI_POLLHUP) == VKI_POLLHUP) {
       VG_(umsg)("Server write command pipe closed...\n");
@@ -362,6 +433,7 @@ Bool SE_(msg_can_be_handled)(const SE_(cmd_server) * server,
   }
 
   switch (server->current_state) {
+  case SERVER_WAIT_FOR_START:
   case SERVER_WAIT_FOR_TARGET:
     return (msg->msg_type == SEMSG_SET_TGT ||
             msg->msg_type == SEMSG_SET_SO_TGT);
