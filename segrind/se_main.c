@@ -42,7 +42,7 @@ static ThreadId target_id = VG_INVALID_THREADID;
 static SE_(cmd_server) * SE_(command_server) = NULL;
 static OSet *syscalls = NULL;
 static XArray *program_states = NULL;
-static SE_(io_vec) *fuzzed_io_vec = NULL;
+static HChar *target_name = NULL;
 
 static SizeT SE_(write_io_vec_to_cmd_server)(SE_(io_vec) * io_vec,
                                              Bool free_io_vec) {
@@ -61,13 +61,13 @@ static SizeT SE_(write_io_vec_to_cmd_server)(SE_(io_vec) * io_vec,
 static void SE_(send_fuzzed_io_vec)(void) {
   UWord syscall_num;
   while (VG_(OSetWord_Next)(syscalls, &syscall_num)) {
-    VG_(OSetWord_Insert)(fuzzed_io_vec->system_calls, syscall_num);
+    VG_(OSetWord_Insert)(SE_(current_io_vec)->system_calls, syscall_num);
   }
   VG_(get_shadow_regs_area)
-  (target_id, (UChar *)&fuzzed_io_vec->expected_state, 0, 0,
-   sizeof(fuzzed_io_vec->expected_state));
+  (target_id, (UChar *)&SE_(current_io_vec)->expected_state, 0, 0,
+   sizeof(SE_(current_io_vec)->expected_state));
 
-  tl_assert(SE_(write_io_vec_to_cmd_server)(fuzzed_io_vec, True) > 0);
+  tl_assert(SE_(write_io_vec_to_cmd_server)(SE_(current_io_vec), True) > 0);
 }
 
 static void SE_(post_clo_init)(void) {
@@ -86,41 +86,74 @@ static void SE_(thread_creation)(ThreadId tid, ThreadId child) {
     }
 
     /* Child executors arrive here */
+    if (syscalls) {
+      VG_(OSetWord_Destroy)(syscalls);
+    }
+    if (program_states) {
+      VG_(deleteXA)(program_states);
+    }
+    if (target_name) {
+      VG_(free)(target_name);
+    }
+
     syscalls =
         VG_(OSetWord_Create)(VG_(malloc), SE_IOVEC_MALLOC_TYPE, VG_(free));
     program_states = VG_(newXA)(VG_(malloc), SE_IOVEC_MALLOC_TYPE, VG_(free),
                                 sizeof(VexGuestArchState));
-    if (SE_(command_server)->using_fuzzed_io_vec) {
-      if (fuzzed_io_vec) {
-        SE_(free_io_vec)(fuzzed_io_vec);
-      }
-      fuzzed_io_vec = SE_(create_io_vec)();
-      VG_(get_shadow_regs_area)
-      (target_id, (UChar *)&fuzzed_io_vec->initial_state, 0, 0,
-       sizeof(fuzzed_io_vec->initial_state));
-    }
-#if defined(VGA_amd64)
-    VG_(umsg)
-    ("About to execute 0x%lx with RDI = 0x%llx\n", VG_(get_IP)(target_id),
-     fuzzed_io_vec->initial_state.guest_RDI);
-#endif
+
+    const HChar *fnname;
+    VG_(get_fnname)
+    (VG_(current_DiEpoch)(), SE_(command_server)->target_func_addr, &fnname);
+    target_name = VG_(strdup)(SE_TOOL_ALLOC_STR, fnname);
+    tl_assert(VG_(strlen)(target_name) > 0);
   }
 }
 
-static void SE_(thread_exit)(ThreadId tid) {
-  if (client_running && tid == target_id) {
-    client_running = False;
-    main_replaced = False;
-    target_id = VG_INVALID_THREADID;
-    if (SE_(command_server)->using_fuzzed_io_vec) {
-      SE_(send_fuzzed_io_vec)();
-    }
+static void SE_(report_success_to_commader)(void) {
+  tl_assert(client_running);
+  tl_assert(main_replaced);
 
-    VG_(deleteXA)(program_states);
-    program_states = NULL;
-    VG_(OSetWord_Destroy)(syscalls);
-    syscalls = NULL;
+  if (SE_(command_server)->using_fuzzed_io_vec) {
+    SE_(send_fuzzed_io_vec)();
   }
+
+  client_running = False;
+  main_replaced = False;
+
+  VG_(deleteXA)(program_states);
+  program_states = NULL;
+  VG_(OSetWord_Destroy)(syscalls);
+  syscalls = NULL;
+  VG_(free)(target_name);
+  target_name = NULL;
+  target_id = VG_INVALID_THREADID;
+
+  VG_(exit)(0);
+}
+
+static void SE_(thread_exit)(ThreadId tid) {}
+
+static void jump_to_target_function(void) {
+  tl_assert(client_running);
+  tl_assert(main_replaced);
+
+  VexGuestArchState current_state;
+  VG_(get_shadow_regs_area)
+  (target_id, (UChar *)&current_state, 0, 0, sizeof(current_state));
+
+  Addr currentStackPtr = VG_(get_SP)(target_id);
+#if defined(VGA_amd64)
+  VG_(umsg)
+  ("About to execute 0x%lx with RDI = 0x%llx\n", VG_(get_IP)(target_id),
+   SE_(current_io_vec)->initial_state.guest_RDI);
+  ULong r_flags = LibVEX_GuestAMD64_get_rflags(&current_state);
+  LibVEX_GuestAMD64_put_rflags(r_flags, &SE_(current_io_vec)->initial_state);
+#endif
+  VG_(set_shadow_regs_area)
+  (target_id, 0, 0, sizeof(SE_(current_io_vec)->expected_state),
+   (UChar *)&SE_(current_io_vec)->initial_state);
+  VG_(set_IP)(target_id, SE_(command_server)->target_func_addr);
+  VG_(set_SP)(target_id, currentStackPtr);
 }
 
 static void SE_(start_client_code)(ThreadId tid, ULong blocks_dispatched) {
@@ -153,6 +186,9 @@ static IRSB *SE_(instrument_target)(IRSB *bb) {
 
   bbOut = deepCopyIRSBExceptStmts(bb);
 
+  const HChar *fnname;
+  VG_(get_fnname)(VG_(current_DiEpoch)(), VG_(get_IP)(target_id), &fnname);
+
   i = 0;
   while (i < bb->stmts_used && bb->stmts[i]->tag != Ist_IMark) {
     addStmtToIRSB(bbOut, bb->stmts[i]);
@@ -171,57 +207,18 @@ static IRSB *SE_(instrument_target)(IRSB *bb) {
       addStmtToIRSB(bbOut, stmt);
       addStmtToIRSB(bbOut, IRStmt_Dirty(di));
       break;
+    case Ist_Exit:
+      di = unsafeIRDirty_0_N(
+          0, "report_success_to_commader",
+          VG_(fnptr_to_fnentry)(&SE_(report_success_to_commader)),
+          mkIRExprVec_0());
+      addStmtToIRSB(bbOut, IRStmt_Dirty(di));
+      break;
     default:
       addStmtToIRSB(bbOut, stmt);
       break;
     }
   }
-  return bbOut;
-}
-
-static IRSB *SE_(replace_main_if_found)(IRSB *bb) {
-  tl_assert(client_running);
-  tl_assert(!main_replaced);
-
-  IRSB *bbOut = bb;
-  IRConst *new_dst;
-  IRExpr *new_guard;
-  Int i;
-
-  IRJumpKind bb_jump = bb->jumpkind;
-  if (bb_jump == Ijk_Call) {
-    bbOut = deepCopyIRSBExceptStmts(bb);
-    i = 0;
-    while (i < bb->stmts_used && bb->stmts[i]->tag != Ist_IMark) {
-      addStmtToIRSB(bbOut, bb->stmts[i]);
-    }
-
-    for (/* use current i */; i < bb->stmts_used; i++) {
-      IRStmt *stmt = bb->stmts[i];
-      if (!stmt)
-        continue;
-
-      switch (stmt->tag) {
-      case Ist_Exit:
-        VG_(umsg)("Exit dst: %llx\n", stmt->Ist.Exit.dst->Ico.U64);
-        if (stmt->Ist.Exit.dst->Ico.U64 == SE_(command_server)->main_addr) {
-          VG_(umsg)("Replacing main!\n");
-          new_dst = IRConst_U64((ULong)SE_(command_server)->target_func_addr);
-          new_guard = deepCopyIRExpr(stmt->Ist.Exit.guard);
-          stmt =
-              IRStmt_Exit(new_guard, bb_jump, new_dst, stmt->Ist.Exit.offsIP);
-          addStmtToIRSB(bbOut, stmt);
-        } else {
-          addStmtToIRSB(bbOut, stmt);
-        }
-        break;
-      default:
-        addStmtToIRSB(bbOut, stmt);
-        break;
-      }
-    }
-  }
-
   return bbOut;
 }
 
@@ -234,15 +231,10 @@ static IRSB *SE_(instrument)(VgCallbackClosure *closure, IRSB *bb,
 
   if (client_running && main_replaced) {
     bbOut = SE_(instrument_target)(bb);
-  } else if (client_running && !main_replaced) {
-    bbOut = SE_(replace_main_if_found)(bb);
-  }
-
-  if (!main_replaced &&
-      VG_(get_IP)(target_id) == SE_(command_server)->main_addr) {
-    ppIRSB(prev);
-    ppIRSB(bbOut);
-    tl_assert2(0, "ERROR: Reached main and it was not replaced!\n");
+  } else if (client_running && !main_replaced &&
+             VG_(get_IP)(target_id) == SE_(command_server)->main_addr) {
+    main_replaced = True;
+    jump_to_target_function();
   }
 
   return bbOut;

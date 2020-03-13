@@ -24,6 +24,8 @@
 #define VKI_POLLNVAL 0x0020
 #endif
 
+SE_(io_vec) * SE_(current_io_vec);
+
 typedef enum se_server_state {
   SERVER_INVALID,            /* Error State */
   SERVER_WAIT_FOR_START,     /* Server is initialized and ready to start */

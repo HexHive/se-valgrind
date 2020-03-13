@@ -16,6 +16,8 @@
 
 #include <sys/wait.h>
 
+SE_(io_vec) * SE_(current_io_vec) = NULL;
+
 /**
  * @brief Write message to commander pipe
  * @param server
@@ -144,16 +146,21 @@ static Bool fuzz_program_state(SE_(cmd_server) * server) {
     return False;
   }
 
-  VexGuestArchState guest_state;
+  if (SE_(current_io_vec)) {
+    SE_(free_io_vec)(SE_(current_io_vec));
+  }
+
+  SE_(current_io_vec) = SE_(create_io_vec)();
+
   VG_(get_shadow_regs_area)
-  (server->executor_tid, (UChar *)&guest_state, 0, 0, sizeof(guest_state));
+  (server->executor_tid, (UChar *)&SE_(current_io_vec)->initial_state, 0, 0,
+   sizeof(SE_(current_io_vec)->initial_state));
 #if defined(VGA_amd64)
   UInt seed = (VG_(getpid)() << 9) ^ VG_(getppid)();
-  guest_state.guest_RDI = VG_(random)(&seed);
-  VG_(umsg)("Setting RDI = 0x%llx\n", guest_state.guest_RDI);
+  SE_(current_io_vec)->initial_state.guest_RDI = VG_(random)(&seed);
+  VG_(umsg)
+  ("Setting RDI = 0x%llx\n", SE_(current_io_vec)->initial_state.guest_RDI);
 #endif
-  VG_(set_shadow_regs_area)
-  (server->executor_tid, 0, 0, sizeof(guest_state), (UChar *)&guest_state);
 
   return SE_(set_server_state)(server, SERVER_WAITING_TO_EXECUTE);
 }

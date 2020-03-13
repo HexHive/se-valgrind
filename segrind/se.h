@@ -9,6 +9,8 @@
 
 #define MAX_DURATION ((UInt)10000)
 
+#define SE_TOOL_ALLOC_STR "segrind"
+
 #include "pub_tool_basics.h"
 #include "pub_tool_libcassert.h"
 #include "pub_tool_libcbase.h"
