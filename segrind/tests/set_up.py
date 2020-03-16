@@ -1,5 +1,6 @@
 import struct
 
+
 target_func = "is_pid_and_argc_even\x00"
 
 empty_fmt = "=iQ"
@@ -12,13 +13,18 @@ read_pipe = open('pipe.out', 'rb')
 
 def read_msg():
     (msg_type, length) = struct.unpack_from(empty_fmt, read_pipe.read(struct.calcsize(empty_fmt)))
+    print("Got ({}, {}) from command pipe".format(msg_type, length))
     if length > 0:
         read_pipe.read(length)
+
+
+read_msg()
 
 
 def send_set_target():
     write_pipe.write(struct.pack(set_tgt_fmt, 2, len(target_func), target_func.encode('utf-8')))
     write_pipe.flush()
+    read_msg()
     read_msg()
 
 
@@ -26,8 +32,10 @@ def send_fuzz_and_execute():
     write_pipe.write(struct.pack(empty_fmt, 4, 0))
     write_pipe.flush()
     read_msg()
+    read_msg()
     write_pipe.write(struct.pack(empty_fmt, 5, 0))
     write_pipe.flush()
+    read_msg()
     read_msg()
 
 

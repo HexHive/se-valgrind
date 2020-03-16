@@ -34,6 +34,8 @@
 #include "pub_tool_mallocfree.h"
 #include "pub_tool_options.h"
 #include "pub_tool_oset.h"
+#include "pub_tool_signals.h"
+#include "pub_tool_stacktrace.h"
 #include "pub_tool_xarray.h"
 
 static Bool client_running = False;
@@ -43,6 +45,8 @@ static SE_(cmd_server) * SE_(command_server) = NULL;
 static OSet *syscalls = NULL;
 static XArray *program_states = NULL;
 static HChar *target_name = NULL;
+
+static void SE_(fault_catcher)(Int sig, Addr addr);
 
 static SizeT SE_(write_io_vec_to_cmd_server)(SE_(io_vec) * io_vec,
                                              Bool free_io_vec) {
@@ -67,6 +71,12 @@ static void SE_(send_fuzzed_io_vec)(void) {
   (target_id, (UChar *)&SE_(current_io_vec)->expected_state, 0, 0,
    sizeof(SE_(current_io_vec)->expected_state));
 
+#if defined(VGA_amd64)
+  VG_(umsg)
+  ("%s returned 0x%llx\n", target_name,
+   SE_(current_io_vec)->expected_state.guest_RAX);
+#endif
+
   tl_assert(SE_(write_io_vec_to_cmd_server)(SE_(current_io_vec), True) > 0);
 }
 
@@ -86,6 +96,9 @@ static void SE_(thread_creation)(ThreadId tid, ThreadId child) {
     }
 
     /* Child executors arrive here */
+    VG_(umsg)("Executor running\n");
+    VG_(clo_vex_control).iropt_register_updates_default =
+        VexRegUpdAllregsAtEachInsn;
     if (syscalls) {
       VG_(OSetWord_Destroy)(syscalls);
     }
@@ -101,12 +114,36 @@ static void SE_(thread_creation)(ThreadId tid, ThreadId child) {
     program_states = VG_(newXA)(VG_(malloc), SE_IOVEC_MALLOC_TYPE, VG_(free),
                                 sizeof(VexGuestArchState));
 
+    //    VG_(set_fault_catcher)(SE_(fault_catcher));
+
     const HChar *fnname;
     VG_(get_fnname)
     (VG_(current_DiEpoch)(), SE_(command_server)->target_func_addr, &fnname);
     target_name = VG_(strdup)(SE_TOOL_ALLOC_STR, fnname);
     tl_assert(VG_(strlen)(target_name) > 0);
+    VG_(umsg)("Executing %s\n", target_name);
   }
+}
+
+static void SE_(cleanup_and_exit)(void) {
+  client_running = False;
+  main_replaced = False;
+
+  if (program_states) {
+    VG_(deleteXA)(program_states);
+    program_states = NULL;
+  }
+  if (syscalls) {
+    VG_(OSetWord_Destroy)(syscalls);
+    syscalls = NULL;
+  }
+  if (target_name) {
+    VG_(free)(target_name);
+    target_name = NULL;
+  }
+  target_id = VG_INVALID_THREADID;
+
+  VG_(exit)(0);
 }
 
 static void SE_(report_success_to_commader)(void) {
@@ -114,21 +151,27 @@ static void SE_(report_success_to_commader)(void) {
   tl_assert(main_replaced);
 
   if (SE_(command_server)->using_fuzzed_io_vec) {
+    VG_(umsg)("Sending IOVec to server...");
     SE_(send_fuzzed_io_vec)();
+    VG_(umsg)("done!\n");
   }
 
-  client_running = False;
-  main_replaced = False;
+  SE_(cleanup_and_exit)();
+}
 
-  VG_(deleteXA)(program_states);
-  program_states = NULL;
-  VG_(OSetWord_Destroy)(syscalls);
-  syscalls = NULL;
-  VG_(free)(target_name);
-  target_name = NULL;
-  target_id = VG_INVALID_THREADID;
+static void SE_(report_failure_to_commander)(void) {
+  tl_assert(client_running);
 
-  VG_(exit)(0);
+  SE_(cmd_msg) *msg = SE_(create_cmd_msg)(SEMSG_FAIL, 0, NULL);
+  SE_(write_msg_to_fd)(SE_(command_server)->executor_pipe[1], msg);
+  SE_(free_msg)(msg);
+
+  SE_(cleanup_and_exit)();
+}
+
+static void SE_(fault_catcher)(Int sig, Addr addr) {
+  VG_(umsg)("Fault %d from 0x%lx caught\n", sig, addr);
+  //  SE_(report_failure_to_commander)();
 }
 
 static void SE_(thread_exit)(ThreadId tid) {}
@@ -148,6 +191,8 @@ static void jump_to_target_function(void) {
    SE_(current_io_vec)->initial_state.guest_RDI);
   ULong r_flags = LibVEX_GuestAMD64_get_rflags(&current_state);
   LibVEX_GuestAMD64_put_rflags(r_flags, &SE_(current_io_vec)->initial_state);
+  SE_(current_io_vec)->initial_state.guest_SSEROUND =
+      current_state.guest_SSEROUND;
 #endif
   VG_(set_shadow_regs_area)
   (target_id, 0, 0, sizeof(SE_(current_io_vec)->expected_state),
@@ -172,6 +217,9 @@ static void record_current_state(void) {
     VG_(umsg)
     ("\tRecording state for instruction at 0x%lx (%s)\n",
      VG_(get_IP)(target_id), fnname);
+#if defined(VGA_amd64)
+    VG_(umsg)("\tRAX = 0x%llx\n", current_state.guest_RAX);
+#endif
     VG_(addToXA)(program_states, &current_state);
   }
 }
@@ -199,6 +247,15 @@ static IRSB *SE_(instrument_target)(IRSB *bb) {
     if (!stmt)
       continue;
 
+    if (VG_(strcmp)(fnname, target_name) == 0 && i == bb->stmts_used - 1 &&
+        bb->jumpkind == Ijk_Ret) {
+      di = unsafeIRDirty_0_N(
+          0, "report_success_to_commader",
+          VG_(fnptr_to_fnentry)(&SE_(report_success_to_commader)),
+          mkIRExprVec_0());
+      addStmtToIRSB(bbOut, IRStmt_Dirty(di));
+      continue;
+    }
     switch (stmt->tag) {
     case Ist_IMark:
       di = unsafeIRDirty_0_N(0, "record_current_state",
@@ -208,17 +265,24 @@ static IRSB *SE_(instrument_target)(IRSB *bb) {
       addStmtToIRSB(bbOut, IRStmt_Dirty(di));
       break;
     case Ist_Exit:
-      di = unsafeIRDirty_0_N(
-          0, "report_success_to_commader",
-          VG_(fnptr_to_fnentry)(&SE_(report_success_to_commader)),
-          mkIRExprVec_0());
-      addStmtToIRSB(bbOut, IRStmt_Dirty(di));
+      ppIRStmt(stmt);
+      VG_(printf)("\n");
+      if (VG_(strcmp)(fnname, target_name) == 0 && bb->jumpkind != Ijk_Boring) {
+        di = unsafeIRDirty_0_N(
+            0, "report_success_to_commader",
+            VG_(fnptr_to_fnentry)(&SE_(report_success_to_commader)),
+            mkIRExprVec_0());
+        addStmtToIRSB(bbOut, IRStmt_Dirty(di));
+      } else {
+        addStmtToIRSB(bbOut, stmt);
+      }
       break;
     default:
       addStmtToIRSB(bbOut, stmt);
       break;
     }
   }
+
   return bbOut;
 }
 
@@ -230,6 +294,7 @@ static IRSB *SE_(instrument)(VgCallbackClosure *closure, IRSB *bb,
   IRSB *bbOut = bb;
 
   if (client_running && main_replaced) {
+    VG_(umsg)("Instrumenting block\n");
     bbOut = SE_(instrument_target)(bb);
   } else if (client_running && !main_replaced &&
              VG_(get_IP)(target_id) == SE_(command_server)->main_addr) {

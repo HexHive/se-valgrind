@@ -12,9 +12,9 @@ int __attribute__((noinline)) foo(int *a, int b, int c) {
   return 0;
 }
 
-int __attribute__((noinline)) is_pid_and_argc_even(int argv) {
+int __attribute__((noinline)) is_pid_and_argc_even(int argc) {
   pid_t pid = getpid();
-  if (argv % 2 && pid % 2) {
+  if (argc % 2 && pid % 2) {
     return 0;
   }
 

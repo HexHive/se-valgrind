@@ -9,6 +9,7 @@
 #include "pub_tool_libcsignal.h"
 #include "pub_tool_machine.h"
 #include "pub_tool_mallocfree.h"
+#include "pub_tool_signals.h"
 #include "pub_tool_threadstate.h"
 #include "pub_tool_vki.h"
 
@@ -157,9 +158,12 @@ static Bool fuzz_program_state(SE_(cmd_server) * server) {
    sizeof(SE_(current_io_vec)->initial_state));
 #if defined(VGA_amd64)
   UInt seed = (VG_(getpid)() << 9) ^ VG_(getppid)();
+  VG_(umsg)
+  ("Initial RDI = 0x%llx\n", SE_(current_io_vec)->initial_state.guest_RDI);
   SE_(current_io_vec)->initial_state.guest_RDI = VG_(random)(&seed);
   VG_(umsg)
   ("Setting RDI = 0x%llx\n", SE_(current_io_vec)->initial_state.guest_RDI);
+  SE_(current_io_vec)->initial_state.guest_RAX = 0;
 #endif
 
   return SE_(set_server_state)(server, SERVER_WAITING_TO_EXECUTE);
@@ -247,7 +251,9 @@ static void wait_for_child(SE_(cmd_server) * server) {
   struct vki_pollfd fds[1];
   fds[0].fd = server->executor_pipe[0];
   fds[0].events = VKI_POLLIN | VKI_POLLHUP | VKI_POLLPRI;
-  VG_(umsg)("Waiting for child for %u ms\n", SE_(MaxDuration));
+  VG_(umsg)
+  ("Waiting for child process %d for %u ms\n", server->running_pid,
+   SE_(MaxDuration));
   fds[0].revents = 0;
   SysRes result =
       VG_(poll)(fds, sizeof(fds) / sizeof(struct vki_pollfd), SE_(MaxDuration));
@@ -285,6 +291,7 @@ cleanup:
   if (wait_result < 0 || (!WIFEXITED(status) && !WIFSIGNALED(status))) {
     VG_(kill)(server->running_pid, VKI_SIGKILL);
   }
+
   server->running_pid = -1;
   VG_(close)(server->executor_pipe[0]);
   SE_(set_server_state)(server, SERVER_WAIT_FOR_CMD);
