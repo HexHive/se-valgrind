@@ -38,6 +38,8 @@
 #include "pub_tool_stacktrace.h"
 #include "pub_tool_xarray.h"
 
+#include "../coregrind/pub_core_scheduler.h"
+
 static Bool client_running = False;
 static Bool main_replaced = False;
 static ThreadId target_id = VG_INVALID_THREADID;
@@ -126,8 +128,10 @@ static void SE_(thread_creation)(ThreadId tid, ThreadId child) {
 }
 
 static void SE_(cleanup_and_exit)(void) {
+  VG_(umsg)("Cleaning up before exiting\n");
   client_running = False;
   main_replaced = False;
+  target_id = VG_INVALID_THREADID;
 
   if (program_states) {
     VG_(deleteXA)(program_states);
@@ -141,8 +145,28 @@ static void SE_(cleanup_and_exit)(void) {
     VG_(free)(target_name);
     target_name = NULL;
   }
-  target_id = VG_INVALID_THREADID;
 
+  if (SE_(cmd_in) > 0) {
+    VG_(close)(SE_(cmd_in));
+    SE_(cmd_in) = -1;
+  }
+
+  if (SE_(cmd_out) > 0) {
+    VG_(close)(SE_(cmd_out));
+    SE_(cmd_out) = -1;
+  }
+
+  if (SE_(log) > 0) {
+    VG_(close)(SE_(log));
+    SE_(log) = -1;
+  }
+
+  if (SE_(command_server)) {
+    SE_(free_server)(SE_(command_server));
+    SE_(command_server) = NULL;
+  }
+
+  VG_(release_BigLock_LL)(NULL);
   VG_(exit)(0);
 }
 
@@ -217,9 +241,6 @@ static void record_current_state(void) {
     VG_(umsg)
     ("\tRecording state for instruction at 0x%lx (%s)\n",
      VG_(get_IP)(target_id), fnname);
-#if defined(VGA_amd64)
-    VG_(umsg)("\tRAX = 0x%llx\n", current_state.guest_RAX);
-#endif
     VG_(addToXA)(program_states, &current_state);
   }
 }
@@ -265,8 +286,6 @@ static IRSB *SE_(instrument_target)(IRSB *bb) {
       addStmtToIRSB(bbOut, IRStmt_Dirty(di));
       break;
     case Ist_Exit:
-      ppIRStmt(stmt);
-      VG_(printf)("\n");
       if (VG_(strcmp)(fnname, target_name) == 0 && bb->jumpkind != Ijk_Boring) {
         di = unsafeIRDirty_0_N(
             0, "report_success_to_commader",
@@ -294,7 +313,6 @@ static IRSB *SE_(instrument)(VgCallbackClosure *closure, IRSB *bb,
   IRSB *bbOut = bb;
 
   if (client_running && main_replaced) {
-    VG_(umsg)("Instrumenting block\n");
     bbOut = SE_(instrument_target)(bb);
   } else if (client_running && !main_replaced &&
              VG_(get_IP)(target_id) == SE_(command_server)->main_addr) {
@@ -317,21 +335,8 @@ static void SE_(post_syscall)(ThreadId tid, UInt syscallno, UWord *args,
                               UInt nArgs, SysRes res) {}
 
 static void SE_(fini)(Int exitcode) {
-  if (SE_(cmd_in) > 0) {
-    VG_(close)(SE_(cmd_in));
-  }
-
-  if (SE_(cmd_out) > 0) {
-    VG_(close)(SE_(cmd_out));
-  }
-
-  if (SE_(log) > 0) {
-    VG_(close)(SE_(log));
-  }
-
-  if (SE_(command_server)) {
-    SE_(free_server)(SE_(command_server));
-  }
+  VG_(umsg)("fini called with %d\n", exitcode);
+  SE_(cleanup_and_exit)();
 }
 
 static void SE_(pre_clo_init)(void) {

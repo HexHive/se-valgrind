@@ -2,6 +2,7 @@ import struct
 
 
 target_func = "is_pid_and_argc_even\x00"
+# target_func = "foo\x00"
 
 empty_fmt = "=iQ"
 
