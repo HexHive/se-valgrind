@@ -42,6 +42,7 @@
 
 static Bool client_running = False;
 static Bool main_replaced = False;
+static Bool target_called = False;
 static ThreadId target_id = VG_INVALID_THREADID;
 static SE_(cmd_server) * SE_(command_server) = NULL;
 static OSet *syscalls = NULL;
@@ -204,43 +205,56 @@ static void jump_to_target_function(void) {
   tl_assert(client_running);
   tl_assert(main_replaced);
 
+  if (target_called) {
+    return;
+  }
+
+  VG_(umsg)("Setting program state\n");
+
   VexGuestArchState current_state;
   VG_(get_shadow_regs_area)
   (target_id, (UChar *)&current_state, 0, 0, sizeof(current_state));
 
-  Addr currentStackPtr = VG_(get_SP)(target_id);
+//  Addr currentStackPtr = VG_(get_SP)(target_id);
 #if defined(VGA_amd64)
   VG_(umsg)
   ("About to execute 0x%lx with RDI = 0x%llx\n", VG_(get_IP)(target_id),
    SE_(current_io_vec)->initial_state.guest_RDI);
-  ULong r_flags = LibVEX_GuestAMD64_get_rflags(&current_state);
-  LibVEX_GuestAMD64_put_rflags(r_flags, &SE_(current_io_vec)->initial_state);
-  SE_(current_io_vec)->initial_state.guest_SSEROUND =
-      current_state.guest_SSEROUND;
+  current_state.guest_RDI = SE_(current_io_vec)->initial_state.guest_RDI;
+//  ULong r_flags = LibVEX_GuestAMD64_get_rflags(&current_state);
+//  LibVEX_GuestAMD64_put_rflags(r_flags, &SE_(current_io_vec)->initial_state);
+//  SE_(current_io_vec)->initial_state.guest_SSEROUND =
+//      current_state.guest_SSEROUND;
 #endif
   VG_(set_shadow_regs_area)
   (target_id, 0, 0, sizeof(SE_(current_io_vec)->expected_state),
-   (UChar *)&SE_(current_io_vec)->initial_state);
-  VG_(set_IP)(target_id, SE_(command_server)->target_func_addr);
-  VG_(set_SP)(target_id, currentStackPtr);
+   (UChar *)&current_state);
+  //  VG_(set_IP)(target_id, SE_(command_server)->target_func_addr);
+  //  VG_(set_SP)(target_id, currentStackPtr);
+  target_called = True;
 }
 
 static void SE_(start_client_code)(ThreadId tid, ULong blocks_dispatched) {
   if (!client_running && tid == target_id) {
     client_running = True;
   }
+
+  if (!main_replaced &&
+      VG_(get_IP)(target_id) == SE_(command_server)->main_addr) {
+    SE_(report_failure_to_commander)();
+  }
 }
 
 static void record_current_state(void) {
-  if (client_running && main_replaced) {
+  if (client_running && main_replaced && target_called) {
     VexGuestArchState current_state;
     VG_(get_shadow_regs_area)
     (target_id, (UChar *)&current_state, 0, 0, sizeof(current_state));
-    const HChar *fnname;
-    VG_(get_fnname)(VG_(current_DiEpoch)(), VG_(get_IP)(target_id), &fnname);
-    VG_(umsg)
-    ("\tRecording state for instruction at 0x%lx (%s)\n",
-     VG_(get_IP)(target_id), fnname);
+    //        const HChar *fnname;
+    //        VG_(get_fnname)(VG_(current_DiEpoch)(), VG_(get_IP)(target_id),
+    //        &fnname); VG_(umsg)
+    //        ("\tRecording state for instruction at 0x%lx (%s)\n",
+    //         VG_(get_IP)(target_id), fnname);
     VG_(addToXA)(program_states, &current_state);
   }
 }
@@ -279,11 +293,18 @@ static IRSB *SE_(instrument_target)(IRSB *bb) {
     }
     switch (stmt->tag) {
     case Ist_IMark:
-      di = unsafeIRDirty_0_N(0, "record_current_state",
-                             VG_(fnptr_to_fnentry)(&record_current_state),
-                             mkIRExprVec_0());
       addStmtToIRSB(bbOut, stmt);
-      addStmtToIRSB(bbOut, IRStmt_Dirty(di));
+      if (stmt->Ist.IMark.addr == SE_(command_server)->target_func_addr) {
+        di = unsafeIRDirty_0_N(0, "jump_to_target_function",
+                               VG_(fnptr_to_fnentry)(&jump_to_target_function),
+                               mkIRExprVec_0());
+        addStmtToIRSB(bbOut, IRStmt_Dirty(di));
+      } else {
+        di = unsafeIRDirty_0_N(0, "record_current_state",
+                               VG_(fnptr_to_fnentry)(&record_current_state),
+                               mkIRExprVec_0());
+        addStmtToIRSB(bbOut, IRStmt_Dirty(di));
+      }
       break;
     case Ist_Exit:
       if (VG_(strcmp)(fnname, target_name) == 0 && bb->jumpkind != Ijk_Boring) {
@@ -292,6 +313,52 @@ static IRSB *SE_(instrument_target)(IRSB *bb) {
             VG_(fnptr_to_fnentry)(&SE_(report_success_to_commader)),
             mkIRExprVec_0());
         addStmtToIRSB(bbOut, IRStmt_Dirty(di));
+      } else {
+        addStmtToIRSB(bbOut, stmt);
+      }
+      break;
+    default:
+      addStmtToIRSB(bbOut, stmt);
+      break;
+    }
+  }
+
+  return bbOut;
+}
+
+static IRSB *SE_(replace_main_reference)(IRSB *bb) {
+  tl_assert(client_running);
+  tl_assert(!main_replaced);
+  tl_assert(!target_called);
+
+  IRSB *bbOut;
+  Int i;
+  IRExpr *expr;
+
+  bbOut = deepCopyIRSBExceptStmts(bb);
+
+  for (i = 0; i < bb->stmts_used; i++) {
+    IRStmt *stmt = bb->stmts[i];
+    switch (stmt->tag) {
+    case Ist_Put:
+      expr = stmt->Ist.Put.data;
+      if (expr->tag == Iex_Const) {
+        IRConst *irConst = expr->Iex.Const.con;
+        if (irConst->tag == Ico_U64 &&
+            irConst->Ico.U64 == SE_(command_server)->main_addr) {
+          irConst = IRConst_U64((ULong)SE_(command_server)->target_func_addr);
+          expr = IRExpr_Const(irConst);
+          addStmtToIRSB(bbOut, IRStmt_Put(stmt->Ist.Put.offset, expr));
+          main_replaced = True;
+        } else if (irConst->tag == Ico_U32 &&
+                   irConst->Ico.U32 == SE_(command_server)->main_addr) {
+          irConst = IRConst_U32((UInt)SE_(command_server)->target_func_addr);
+          expr = IRExpr_Const(irConst);
+          addStmtToIRSB(bbOut, IRStmt_Put(stmt->Ist.Put.offset, expr));
+          main_replaced = True;
+        } else {
+          addStmtToIRSB(bbOut, stmt);
+        }
       } else {
         addStmtToIRSB(bbOut, stmt);
       }
@@ -314,10 +381,8 @@ static IRSB *SE_(instrument)(VgCallbackClosure *closure, IRSB *bb,
 
   if (client_running && main_replaced) {
     bbOut = SE_(instrument_target)(bb);
-  } else if (client_running && !main_replaced &&
-             VG_(get_IP)(target_id) == SE_(command_server)->main_addr) {
-    main_replaced = True;
-    jump_to_target_function();
+  } else if (client_running && !main_replaced && !target_called) {
+    bbOut = SE_(replace_main_reference)(bb);
   }
 
   return bbOut;

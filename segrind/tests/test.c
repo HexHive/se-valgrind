@@ -14,18 +14,19 @@ int __attribute__((noinline)) foo(int *a, int b, int c) {
 
 int __attribute__((noinline)) is_pid_and_argc_even(int argc) {
   pid_t pid = getpid();
-  if (argc % 2 && pid % 2) {
-    return 0;
+  printf("argc = %d, pid = %d\n", argc, pid);
+  if (argc % 2 == 0 && pid % 2 == 0) {
+    return 1;
   }
 
-  return 1;
+  return 0;
 }
 
 int main(int argc, char **argv) {
-  int *a = (int *)malloc(sizeof(int));
-  if (a) {
-    return foo(a, argc, argc - 1);
-  }
+  //  int *a = (int *)malloc(sizeof(int));
+  //  if (a) {
+  //    return foo(a, argc, argc - 1);
+  //  }
 
   return is_pid_and_argc_even(argc);
 }
