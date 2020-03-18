@@ -42,6 +42,8 @@
 // the need for this file.
 typedef void (*fault_catcher_t)(Int sig, Addr addr);
 extern fault_catcher_t VG_(set_fault_catcher)(fault_catcher_t catcher);
+extern void
+    VG_(set_call_fault_catcher_in_generated)(Bool should_call_in_generated);
 
 #endif   // __PUB_TOOL_SIGNALS_H
 

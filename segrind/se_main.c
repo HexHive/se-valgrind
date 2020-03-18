@@ -92,64 +92,6 @@ static void SE_(send_fuzzed_io_vec)(void) {
   tl_assert(SE_(write_io_vec_to_cmd_server)(SE_(current_io_vec), True) > 0);
 }
 
-static void SE_(post_clo_init)(void) {
-  SE_(command_server) = SE_(make_server)(SE_(cmd_in), SE_(cmd_out));
-  tl_assert(SE_(command_server));
-}
-
-static void SE_(signal_handler)(ThreadId tid, Int sigNo, Bool alt_stack) {
-  VG_(umsg)("Thread %u signal handler called: %d\n", tid, sigNo);
-  if (sigNo == VKI_SIGSEGV) {
-    SE_(write_msg_to_fd)
-    (SE_(command_server)->executor_pipe[1],
-     SE_(create_cmd_msg)(SEMSG_NEW_ALLOC, 0, NULL), True);
-  }
-}
-
-/**
- * @brief Starts the command server, which only returns on exit, but executor
- * processes continue to the end
- * @param tid
- * @param child
- */
-static void SE_(thread_creation)(ThreadId tid, ThreadId child) {
-  if (!client_running) {
-    target_id = child;
-    VG_(umsg)("Starting Command Server\n");
-    SE_(start_server)(SE_(command_server), child);
-
-    if (SE_(command_server)->current_state != SERVER_EXECUTING) {
-      VG_(exit)(0);
-    }
-
-    /* Child executors arrive here */
-    VG_(umsg)("Executor running\n");
-    VG_(clo_vex_control).iropt_register_updates_default =
-        VexRegUpdAllregsAtEachInsn;
-    if (syscalls) {
-      VG_(OSetWord_Destroy)(syscalls);
-    }
-    if (program_states) {
-      VG_(deleteXA)(program_states);
-    }
-    if (target_name) {
-      VG_(free)(target_name);
-    }
-
-    syscalls =
-        VG_(OSetWord_Create)(VG_(malloc), SE_IOVEC_MALLOC_TYPE, VG_(free));
-    program_states = VG_(newXA)(VG_(malloc), SE_IOVEC_MALLOC_TYPE, VG_(free),
-                                sizeof(VexGuestArchState));
-
-    const HChar *fnname;
-    VG_(get_fnname)
-    (VG_(current_DiEpoch)(), SE_(command_server)->target_func_addr, &fnname);
-    target_name = VG_(strdup)(SE_TOOL_ALLOC_STR, fnname);
-    tl_assert(VG_(strlen)(target_name) > 0);
-    VG_(umsg)("Executing %s\n", target_name);
-  }
-}
-
 /**
  * Peforms any necessary freeing of allocated objects, sets state variables,
  * releases any held locks, then calls VG_(exit)(0)
@@ -195,6 +137,68 @@ static void SE_(cleanup_and_exit)(void) {
 
   VG_(release_BigLock_LL)(NULL);
   VG_(exit)(0);
+}
+
+static void SE_(post_clo_init)(void) {
+  SE_(command_server) = SE_(make_server)(SE_(cmd_in), SE_(cmd_out));
+  tl_assert(SE_(command_server));
+}
+
+static void SE_(signal_handler)(Int sigNo, Addr addr) {
+  VG_(umsg)("signal handler called: %d\n", sigNo);
+  if (sigNo == VKI_SIGSEGV) {
+    SE_(write_msg_to_fd)
+    (SE_(command_server)->executor_pipe[1],
+     SE_(create_cmd_msg)(SEMSG_NEW_ALLOC, 0, NULL), True);
+  }
+  SE_(cleanup_and_exit)();
+}
+
+/**
+ * @brief Starts the command server, which only returns on exit, but executor
+ * processes continue to the end
+ * @param tid
+ * @param child
+ */
+static void SE_(thread_creation)(ThreadId tid, ThreadId child) {
+  if (!client_running) {
+    target_id = child;
+    VG_(umsg)("Starting Command Server\n");
+    SE_(start_server)(SE_(command_server), child);
+
+    if (SE_(command_server)->current_state != SERVER_EXECUTING) {
+      VG_(exit)(0);
+    }
+
+    /* Child executors arrive here */
+    VG_(umsg)("Executor running\n");
+    VG_(clo_vex_control).iropt_register_updates_default =
+        VexRegUpdAllregsAtEachInsn;
+    if (syscalls) {
+      VG_(OSetWord_Destroy)(syscalls);
+    }
+    if (program_states) {
+      VG_(deleteXA)(program_states);
+    }
+    if (target_name) {
+      VG_(free)(target_name);
+    }
+
+    syscalls =
+        VG_(OSetWord_Create)(VG_(malloc), SE_IOVEC_MALLOC_TYPE, VG_(free));
+    program_states = VG_(newXA)(VG_(malloc), SE_IOVEC_MALLOC_TYPE, VG_(free),
+                                sizeof(VexGuestArchState));
+
+    VG_(set_fault_catcher)(SE_(signal_handler));
+    VG_(set_call_fault_catcher_in_generated)(True);
+
+    const HChar *fnname;
+    VG_(get_fnname)
+    (VG_(current_DiEpoch)(), SE_(command_server)->target_func_addr, &fnname);
+    target_name = VG_(strdup)(SE_TOOL_ALLOC_STR, fnname);
+    tl_assert(VG_(strlen)(target_name) > 0);
+    VG_(umsg)("Executing %s\n", target_name);
+  }
 }
 
 /**
@@ -466,7 +470,6 @@ static void SE_(pre_clo_init)(void) {
   VG_(track_start_client_code)(SE_(start_client_code));
   VG_(track_pre_thread_ll_create)(SE_(thread_creation));
   VG_(track_pre_thread_ll_exit)(SE_(thread_exit));
-  VG_(track_pre_deliver_signal)(SE_(signal_handler));
 
   VG_(needs_syscall_wrapper)(SE_(pre_syscall), SE_(post_syscall));
 

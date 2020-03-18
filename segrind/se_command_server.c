@@ -242,6 +242,22 @@ static Bool handle_command(SE_(cmd_server) * server) {
   return parent_should_fork;
 }
 
+static Bool handle_new_alloc(SE_(cmd_server) * server,
+                             SE_(cmd_msg) * new_alloc_msg) {
+  tl_assert(server);
+  tl_assert(new_alloc_msg);
+  tl_assert(new_alloc_msg->msg_type == SEMSG_NEW_ALLOC);
+  tl_assert(server->using_fuzzed_io_vec);
+
+  // TODO: Implement fetching of new alloc
+  SE_(set_server_state)(server, SERVER_WAIT_FOR_CMD);
+  fuzz_program_state(server);
+
+  SE_(free_msg)(new_alloc_msg);
+  SE_(set_server_state)(server, SERVER_WAITING_TO_EXECUTE);
+  return True;
+}
+
 /**
  * @brief Wait for the child process to finish executing or timeout
  * @param server
@@ -284,9 +300,10 @@ static Bool wait_for_child(SE_(cmd_server) * server) {
       VG_(umsg)("Reading from executor failed\n");
       report_error(server, "Error reading executor pipe");
     } else {
-      VG_(umsg)("Got message from executor\n");
+      VG_(umsg)
+      ("Got %s message from executor\n", SE_(msg_type_str)(cmd_msg->msg_type));
       if (server->using_fuzzed_io_vec && cmd_msg->msg_type == SEMSG_NEW_ALLOC) {
-        should_fork = True;
+        should_fork = handle_new_alloc(server, cmd_msg);
       } else {
         write_to_commander(server, cmd_msg, True);
       }
@@ -306,7 +323,9 @@ cleanup:
 
   server->running_pid = -1;
   VG_(close)(server->executor_pipe[0]);
-  SE_(set_server_state)(server, SERVER_WAIT_FOR_CMD);
+  if (!should_fork) {
+    SE_(set_server_state)(server, SERVER_WAIT_FOR_CMD);
+  }
 
   return should_fork;
 }
@@ -320,6 +339,7 @@ SE_(cmd_server) * SE_(make_server)(Int commander_r_fd, Int commander_w_fd) {
   tl_assert(cmd_server);
   VG_(umsg)("Command Server created!\n");
 
+  cmd_server->current_state = SERVER_WAIT_FOR_CMD;
   SE_(reset_server)(cmd_server);
   cmd_server->commander_r_fd = commander_r_fd;
   cmd_server->commander_w_fd = commander_w_fd;
@@ -334,49 +354,56 @@ SE_(cmd_server) * SE_(make_server)(Int commander_r_fd, Int commander_w_fd) {
  * @return True if the calling function should return
  */
 static Bool SE_(fork_and_execute)(SE_(cmd_server) * server) {
-  if (!SE_(set_server_state)(server, SERVER_EXECUTING)) {
-    report_error(server, "Invalid server state");
-    return False;
-  }
-start_fork:
-  VG_(umsg)("Server forking\n");
+  Int pid;
 
-  if (VG_(pipe)(server->executor_pipe) < 0) {
-    report_error(server, "Pipe failed");
-    return False;
-  }
+  while (server->attempt_count <= SE_(MaxAttempts)) {
+    if (!SE_(set_server_state)(server, SERVER_EXECUTING)) {
+      report_error(server, "Invalid server state");
+      goto exit;
+    }
+    VG_(umsg)
+    ("Server forking %u with status %s\n", server->attempt_count,
+     SE_(server_state_str)(server->current_state));
 
-  Int pid = VG_(fork)();
-  if (pid < 0) {
-    VG_(close)(server->executor_pipe[0]);
-    VG_(close)(server->executor_pipe[1]);
-    server->executor_pipe[0] = server->executor_pipe[1] = -1;
+    if (VG_(pipe)(server->executor_pipe) < 0) {
+      report_error(server, "Pipe failed");
+      goto exit;
+    }
 
-    report_error(server, "Failed to fork child process");
-  } else {
-    if (pid == 0) {
+    pid = VG_(fork)();
+    if (pid < 0) {
       VG_(close)(server->executor_pipe[0]);
-      VG_(close)(server->commander_r_fd);
-      VG_(close)(server->commander_w_fd);
-
-      /* Child process exits and starts executing target code */
-      return True;
-    } else {
-      server->running_pid = pid;
-      server->attempt_count++;
       VG_(close)(server->executor_pipe[1]);
-      if (wait_for_child(server)) {
-        if (server->attempt_count >= SE_(MaxAttempts)) {
-          write_to_commander(
-              server, SE_(create_cmd_msg)(SEMSG_TOO_MANY_ATTEMPTS, 0, NULL),
-              True);
-        } else {
-          goto start_fork;
+      server->executor_pipe[0] = server->executor_pipe[1] = -1;
+
+      report_error(server, "Failed to fork child process");
+      goto exit;
+    } else {
+      if (pid == 0) {
+        VG_(close)(server->executor_pipe[0]);
+        VG_(close)(server->commander_r_fd);
+        VG_(close)(server->commander_w_fd);
+
+        /* Child process exits and starts executing target code */
+        return True;
+      } else {
+        server->running_pid = pid;
+        server->attempt_count++;
+        VG_(close)(server->executor_pipe[1]);
+        if (wait_for_child(server)) {
+          if (server->attempt_count >= SE_(MaxAttempts)) {
+            write_to_commander(
+                server, SE_(create_cmd_msg)(SEMSG_TOO_MANY_ATTEMPTS, 0, NULL),
+                True);
+            break;
+          }
         }
       }
     }
   }
 
+exit:
+  SE_(set_server_state)(server, SERVER_WAIT_FOR_CMD);
   return False;
 }
 
@@ -483,6 +510,11 @@ Bool SE_(set_server_state)(SE_(cmd_server) * server,
   Bool res = SE_(is_valid_transition)(server, next_state);
   if (res) {
     server->current_state = next_state;
+  } else {
+    VG_(umsg)
+    ("Invalid transition: %s -> %s\n",
+     SE_(server_state_str)(server->current_state),
+     SE_(server_state_str)(next_state));
   }
 
   return res;
@@ -547,7 +579,8 @@ const HChar *SE_(server_state_str)(SE_(cmd_server_state) state) {
   case SERVER_WAITING_TO_EXECUTE:
     return "SERVER_WAITING_TO_EXECUTE";
   default:
-    tl_assert(0);
+    VG_(umsg)("Unknown state: %u\n", state);
+    return "UNKNOWN_STATE";
   }
 }
 
