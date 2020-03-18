@@ -26,8 +26,8 @@
 #include "se.h"
 #include "se_command_server.h"
 #include "se_io_vec.h"
-#include <libvex_ir.h>
 
+#include "libvex.h"
 #include "pub_tool_basics.h"
 #include "pub_tool_guest.h"
 #include "pub_tool_libcproc.h"
@@ -49,8 +49,12 @@ static OSet *syscalls = NULL;
 static XArray *program_states = NULL;
 static HChar *target_name = NULL;
 
-static void SE_(fault_catcher)(Int sig, Addr addr);
-
+/**
+ * @brief Writes SEMSG_OK msg with io_vec to the commander process
+ * @param io_vec
+ * @param free_io_vec - True if the IOVec should be freed
+ * @return the number of bytes written to the server
+ */
 static SizeT SE_(write_io_vec_to_cmd_server)(SE_(io_vec) * io_vec,
                                              Bool free_io_vec) {
   tl_assert(SE_(command_server));
@@ -65,6 +69,11 @@ static SizeT SE_(write_io_vec_to_cmd_server)(SE_(io_vec) * io_vec,
   return bytes_written;
 }
 
+/**
+ * @brief Records the executed system calls to SE_(current_io_vec),
+ * captures the current program state in the expected_state member, then
+ * writes the IOVec to the commander process
+ */
 static void SE_(send_fuzzed_io_vec)(void) {
   UWord syscall_num;
   while (VG_(OSetWord_Next)(syscalls, &syscall_num)) {
@@ -88,6 +97,12 @@ static void SE_(post_clo_init)(void) {
   tl_assert(SE_(command_server));
 }
 
+/**
+ * @brief Starts the command server, which only returns on exit, but executor
+ * processes continue to the end
+ * @param tid
+ * @param child
+ */
 static void SE_(thread_creation)(ThreadId tid, ThreadId child) {
   if (!client_running) {
     target_id = child;
@@ -117,8 +132,6 @@ static void SE_(thread_creation)(ThreadId tid, ThreadId child) {
     program_states = VG_(newXA)(VG_(malloc), SE_IOVEC_MALLOC_TYPE, VG_(free),
                                 sizeof(VexGuestArchState));
 
-    //    VG_(set_fault_catcher)(SE_(fault_catcher));
-
     const HChar *fnname;
     VG_(get_fnname)
     (VG_(current_DiEpoch)(), SE_(command_server)->target_func_addr, &fnname);
@@ -128,6 +141,10 @@ static void SE_(thread_creation)(ThreadId tid, ThreadId child) {
   }
 }
 
+/**
+ * Peforms any necessary freeing of allocated objects, sets state variables,
+ * releases any held locks, then calls VG_(exit)(0)
+ */
 static void SE_(cleanup_and_exit)(void) {
   VG_(umsg)("Cleaning up before exiting\n");
   client_running = False;
@@ -171,6 +188,10 @@ static void SE_(cleanup_and_exit)(void) {
   VG_(exit)(0);
 }
 
+/**
+ * @brief Sends SEMSG_OK msg to commander process. Includes full fuzzed IOVec if
+ * the command server is using a fuzzed input program state
+ */
 static void SE_(report_success_to_commader)(void) {
   tl_assert(client_running);
   tl_assert(main_replaced);
@@ -184,6 +205,9 @@ static void SE_(report_success_to_commader)(void) {
   SE_(cleanup_and_exit)();
 }
 
+/**
+ * @brief Writes SEMSG_FAIL to commander process
+ */
 static void SE_(report_failure_to_commander)(void) {
   tl_assert(client_running);
 
@@ -194,13 +218,11 @@ static void SE_(report_failure_to_commander)(void) {
   SE_(cleanup_and_exit)();
 }
 
-static void SE_(fault_catcher)(Int sig, Addr addr) {
-  VG_(umsg)("Fault %d from 0x%lx caught\n", sig, addr);
-  //  SE_(report_failure_to_commander)();
-}
-
 static void SE_(thread_exit)(ThreadId tid) {}
 
+/**
+ * @brief Sets the input state for the target function upon entry.
+ */
 static void jump_to_target_function(void) {
   tl_assert(client_running);
   tl_assert(main_replaced);
@@ -215,25 +237,24 @@ static void jump_to_target_function(void) {
   VG_(get_shadow_regs_area)
   (target_id, (UChar *)&current_state, 0, 0, sizeof(current_state));
 
-//  Addr currentStackPtr = VG_(get_SP)(target_id);
 #if defined(VGA_amd64)
   VG_(umsg)
   ("About to execute 0x%lx with RDI = 0x%llx\n", VG_(get_IP)(target_id),
    SE_(current_io_vec)->initial_state.guest_RDI);
   current_state.guest_RDI = SE_(current_io_vec)->initial_state.guest_RDI;
-//  ULong r_flags = LibVEX_GuestAMD64_get_rflags(&current_state);
-//  LibVEX_GuestAMD64_put_rflags(r_flags, &SE_(current_io_vec)->initial_state);
-//  SE_(current_io_vec)->initial_state.guest_SSEROUND =
-//      current_state.guest_SSEROUND;
 #endif
   VG_(set_shadow_regs_area)
   (target_id, 0, 0, sizeof(SE_(current_io_vec)->expected_state),
    (UChar *)&current_state);
-  //  VG_(set_IP)(target_id, SE_(command_server)->target_func_addr);
-  //  VG_(set_SP)(target_id, currentStackPtr);
   target_called = True;
 }
 
+/**
+ * @brief Sets client_running boolean and checks that main has been replaced
+ * before it is called.
+ * @param tid
+ * @param blocks_dispatched
+ */
 static void SE_(start_client_code)(ThreadId tid, ULong blocks_dispatched) {
   if (!client_running && tid == target_id) {
     client_running = True;
@@ -245,20 +266,25 @@ static void SE_(start_client_code)(ThreadId tid, ULong blocks_dispatched) {
   }
 }
 
+/**
+ * @brief Records the current guest state if the client is running, main is
+ * replaced, and the target has been called.
+ */
 static void record_current_state(void) {
   if (client_running && main_replaced && target_called) {
     VexGuestArchState current_state;
     VG_(get_shadow_regs_area)
     (target_id, (UChar *)&current_state, 0, 0, sizeof(current_state));
-    //        const HChar *fnname;
-    //        VG_(get_fnname)(VG_(current_DiEpoch)(), VG_(get_IP)(target_id),
-    //        &fnname); VG_(umsg)
-    //        ("\tRecording state for instruction at 0x%lx (%s)\n",
-    //         VG_(get_IP)(target_id), fnname);
     VG_(addToXA)(program_states, &current_state);
   }
 }
 
+/**
+ * @brief Adds calls to record_current_state, and report_success to the input
+ * IRSB.
+ * @param bb
+ * @return Instrumented IRSB
+ */
 static IRSB *SE_(instrument_target)(IRSB *bb) {
   tl_assert(client_running);
   tl_assert(main_replaced);
@@ -326,6 +352,15 @@ static IRSB *SE_(instrument_target)(IRSB *bb) {
   return bbOut;
 }
 
+/**
+ * @brief The address of main is expected to be a constant, so search for
+ * a IRConst containing the address of main.  This currently assumes that
+ * the address is used in a PUT IRStmt, which may not be valid for all
+ * architectures.
+ * @param bb
+ * @return a copy of bb with an IRConst containing the address of main replaced
+ * with the target function address if the main address is found.
+ */
 static IRSB *SE_(replace_main_reference)(IRSB *bb) {
   tl_assert(client_running);
   tl_assert(!main_replaced);
