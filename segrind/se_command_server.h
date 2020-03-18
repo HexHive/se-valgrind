@@ -50,6 +50,7 @@ typedef struct {
   Bool using_fuzzed_io_vec;
   Bool using_existing_io_vec;
   ThreadId executor_tid;
+  UInt attempt_count;
 } SE_(cmd_server);
 
 /**

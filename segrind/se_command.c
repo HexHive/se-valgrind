@@ -45,7 +45,7 @@ void SE_(free_msg)(SE_(cmd_msg) * msg) {
   }
 }
 
-SizeT SE_(write_msg_to_fd)(Int fd, const SE_(cmd_msg) * msg) {
+SizeT SE_(write_msg_to_fd)(Int fd, SE_(cmd_msg) * msg, Bool free_msg) {
   tl_assert(fd >= 0);
   tl_assert(msg);
 
@@ -65,6 +65,10 @@ SizeT SE_(write_msg_to_fd)(Int fd, const SE_(cmd_msg) * msg) {
       return 0;
     }
     bytes_written += msg->length;
+  }
+
+  if (free_msg) {
+    SE_(free_msg)(msg);
   }
 
   return bytes_written;
@@ -94,6 +98,14 @@ const HChar *SE_(msg_type_str)(SE_(cmd_msg_t) type) {
     return "SEMSG_RESET";
   case SEMSG_SET_SO_TGT:
     return "SEMSG_SET_SO_TGT";
+  case SEMSG_NEW_ALLOC:
+    return "SEMSG_NEW_ALLOC";
+  case SEMSG_FAILED_CTX:
+    return "SEMSG_FAILED_CTX";
+  case SEMSG_TOO_MANY_INS:
+    return "SEMSG_TOO_MANY_INS";
+  case SEMSG_TOO_MANY_ATTEMPTS:
+    return "SEMSG_TOO_MANY_ATTEMPTS";
   default:
     tl_assert(0);
   }

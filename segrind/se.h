@@ -7,7 +7,9 @@
 
 #define SE_(str) VGAPPEND(vgSegrind_, str)
 
-#define MAX_DURATION ((UInt)10000)
+#define DEFAULT_DURATION ((UInt)10000)
+#define DEFAULT_ATTEMPTS ((UInt)3)
+#define WARN_ATTEMPTS 10
 
 #define SE_TOOL_ALLOC_STR "segrind"
 
@@ -29,6 +31,8 @@ UInt SE_(MaxDuration);
 Addr SE_(user_main);
 
 UInt SE_(seed);
+
+UInt SE_(MaxAttempts);
 
 /*****************************************************
  * Command line parsing

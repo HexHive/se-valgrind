@@ -5,11 +5,12 @@
 #include "pub_tool_options.h"
 #include "se.h"
 
-UInt SE_(MaxDuration) = MAX_DURATION;
+UInt SE_(MaxDuration) = DEFAULT_DURATION;
 Int SE_(cmd_in) = -1;
 Int SE_(cmd_out) = -1;
 Int SE_(log) = -1;
 Addr SE_(user_main) = 0;
+UInt SE_(MaxAttempts) = DEFAULT_ATTEMPTS;
 
 Bool SE_(process_cmd_line_option)(const HChar *arg) {
   const HChar *tmp_str;
@@ -38,6 +39,10 @@ Bool SE_(process_cmd_line_option)(const HChar *arg) {
       VG_(fmsg_bad_option(arg, "Invalid main address"));
     }
   } else if (VG_INT_CLO(arg, "--seed", SE_(seed))) {
+  } else if (VG_INT_CLO(arg, "--max-attempts", SE_(MaxAttempts))) {
+    if (SE_(MaxAttempts) > WARN_ATTEMPTS) {
+      VG_(umsg)("Warning! High Attempt Count %u\n!", SE_(MaxAttempts));
+    }
   }
 
   return False;
@@ -49,8 +54,10 @@ void SE_(print_usage)(void) {
    "--out-pipe=<file>            Filename of the command server write pipe\n"
    "--log=<file>                 Filename of the log to write to\n"
    "--max-duration=<millis>      Max number of milliseconds to run before "
-   "executor process is killed. Defaults to %u\n",
-   MAX_DURATION);
+   "executor process is killed. Defaults to %u\n"
+   "--max-attempts=<int>         Max number of attempts at trying to fuzz a "
+   "function before giving up. Defaults to %u\n",
+   DEFAULT_DURATION, DEFAULT_ATTEMPTS);
 }
 
 void SE_(print_debug_usage)(void) { SE_(print_usage)(); }

@@ -97,6 +97,15 @@ static void SE_(post_clo_init)(void) {
   tl_assert(SE_(command_server));
 }
 
+static void SE_(signal_handler)(ThreadId tid, Int sigNo, Bool alt_stack) {
+  VG_(umsg)("Thread %u signal handler called: %d\n", tid, sigNo);
+  if (sigNo == VKI_SIGSEGV) {
+    SE_(write_msg_to_fd)
+    (SE_(command_server)->executor_pipe[1],
+     SE_(create_cmd_msg)(SEMSG_NEW_ALLOC, 0, NULL), True);
+  }
+}
+
 /**
  * @brief Starts the command server, which only returns on exit, but executor
  * processes continue to the end
@@ -126,6 +135,8 @@ static void SE_(thread_creation)(ThreadId tid, ThreadId child) {
     if (target_name) {
       VG_(free)(target_name);
     }
+
+    VG_(track_pre_deliver_signal)(SE_(signal_handler));
 
     syscalls =
         VG_(OSetWord_Create)(VG_(malloc), SE_IOVEC_MALLOC_TYPE, VG_(free));
@@ -211,9 +222,9 @@ static void SE_(report_success_to_commader)(void) {
 static void SE_(report_failure_to_commander)(void) {
   tl_assert(client_running);
 
-  SE_(cmd_msg) *msg = SE_(create_cmd_msg)(SEMSG_FAIL, 0, NULL);
-  SE_(write_msg_to_fd)(SE_(command_server)->executor_pipe[1], msg);
-  SE_(free_msg)(msg);
+  SE_(write_msg_to_fd)
+  (SE_(command_server)->executor_pipe[1],
+   SE_(create_cmd_msg)(SEMSG_FAIL, 0, NULL), True);
 
   SE_(cleanup_and_exit)();
 }
@@ -425,7 +436,7 @@ static IRSB *SE_(instrument)(VgCallbackClosure *closure, IRSB *bb,
 
 static void SE_(pre_syscall)(ThreadId tid, UInt syscallno, UWord *args,
                              UInt nArgs) {
-  if (tid == target_id && client_running &&
+  if (tid == target_id && client_running && target_called &&
       !VG_(OSetWord_Contains)(syscalls, (UWord)syscallno)) {
     VG_(OSetWord_Insert)(syscalls, (UWord)syscallno);
   }

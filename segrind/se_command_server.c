@@ -30,16 +30,13 @@ static SizeT write_to_commander(SE_(cmd_server) * server, SE_(cmd_msg) * msg,
   tl_assert(server);
   tl_assert(msg);
 
-  SizeT bytes_written = SE_(write_msg_to_fd)(server->commander_w_fd, msg);
+  SizeT bytes_written =
+      SE_(write_msg_to_fd)(server->commander_w_fd, msg, free_msg);
   if (bytes_written <= 0) {
     VG_(umsg)
     ("Failed to write %s message to commander: %lu\n",
      SE_(msg_type_str)(msg->msg_type), bytes_written);
     bytes_written = 0;
-  }
-
-  if (free_msg) {
-    SE_(free_msg)(msg);
   }
 
   return bytes_written;
@@ -82,6 +79,16 @@ static void report_error(SE_(cmd_server) * server, const HChar *msg) {
   SE_(cmd_msg) *cmdmsg = SE_(create_cmd_msg)(SEMSG_FAIL, msg_len, msg);
   write_to_commander(server, cmdmsg, True);
 
+  SE_(set_server_state)(server, SERVER_REPORT_ERROR);
+}
+
+/**
+ * @brief Writes timeout msg to command pipe
+ * @param server
+ */
+static void report_timeout(SE_(cmd_server) * server) {
+  SE_(cmd_msg) *cmdmsg = SE_(create_cmd_msg)(SEMSG_TOO_MANY_INS, 0, NULL);
+  write_to_commander(server, cmdmsg, True);
   SE_(set_server_state)(server, SERVER_REPORT_ERROR);
 }
 
@@ -238,14 +245,16 @@ static Bool handle_command(SE_(cmd_server) * server) {
 /**
  * @brief Wait for the child process to finish executing or timeout
  * @param server
+ * @return True if server should fork and execute target function again
  */
-static void wait_for_child(SE_(cmd_server) * server) {
+static Bool wait_for_child(SE_(cmd_server) * server) {
   tl_assert(server);
   tl_assert(server->running_pid > 0);
   tl_assert(server->current_state == SERVER_EXECUTING);
 
   Int status;
   Int wait_result;
+  Bool should_fork = False;
 
   struct vki_pollfd fds[1];
   fds[0].fd = server->executor_pipe[0];
@@ -262,7 +271,7 @@ static void wait_for_child(SE_(cmd_server) * server) {
       report_error(server, "Executor poll failed");
     } else {
       VG_(umsg)("Poll timed out\n");
-      report_error(server, "Child timed out");
+      report_timeout(server);
     }
 
     goto cleanup;
@@ -276,11 +285,15 @@ static void wait_for_child(SE_(cmd_server) * server) {
       report_error(server, "Error reading executor pipe");
     } else {
       VG_(umsg)("Got message from executor\n");
-      write_to_commander(server, cmd_msg, True);
+      if (server->using_fuzzed_io_vec && cmd_msg->msg_type == SEMSG_NEW_ALLOC) {
+        should_fork = True;
+      } else {
+        write_to_commander(server, cmd_msg, True);
+      }
     }
     goto cleanup;
   } else if ((fds[0].revents & VKI_POLLHUP) == VKI_POLLHUP) {
-    VG_(umsg)("Hung up\n");
+    VG_(umsg)("Executor Hung up\n");
   }
   report_error(server, NULL);
 
@@ -294,6 +307,8 @@ cleanup:
   server->running_pid = -1;
   VG_(close)(server->executor_pipe[0]);
   SE_(set_server_state)(server, SERVER_WAIT_FOR_CMD);
+
+  return should_fork;
 }
 
 SE_(cmd_server) * SE_(make_server)(Int commander_r_fd, Int commander_w_fd) {
@@ -311,6 +326,58 @@ SE_(cmd_server) * SE_(make_server)(Int commander_r_fd, Int commander_w_fd) {
   cmd_server->current_state = SERVER_WAIT_FOR_START;
 
   return cmd_server;
+}
+
+/**
+ * @brief Forks the current process and waits for the child to finish
+ * @param server
+ * @return True if the calling function should return
+ */
+Bool SE_(fork_and_execute)(SE_(cmd_server) * server) {
+  if (!SE_(set_server_state)(server, SERVER_EXECUTING)) {
+    report_error(server, "Invalid server state");
+    return False;
+  }
+start_fork:
+  VG_(umsg)("Server forking\n");
+
+  if (VG_(pipe)(server->executor_pipe) < 0) {
+    report_error(server, "Pipe failed");
+    return False;
+  }
+
+  Int pid = VG_(fork)();
+  if (pid < 0) {
+    VG_(close)(server->executor_pipe[0]);
+    VG_(close)(server->executor_pipe[1]);
+    server->executor_pipe[0] = server->executor_pipe[1] = -1;
+
+    report_error(server, "Failed to fork child process");
+  } else {
+    if (pid == 0) {
+      VG_(close)(server->executor_pipe[0]);
+      VG_(close)(server->commander_r_fd);
+      VG_(close)(server->commander_w_fd);
+
+      /* Child process exits and starts executing target code */
+      return True;
+    } else {
+      server->running_pid = pid;
+      server->attempt_count++;
+      VG_(close)(server->executor_pipe[1]);
+      if (wait_for_child(server)) {
+        if (server->attempt_count >= SE_(MaxAttempts)) {
+          write_to_commander(
+              server, SE_(create_cmd_msg)(SEMSG_TOO_MANY_ATTEMPTS, 0, NULL),
+              True);
+        } else {
+          goto start_fork;
+        }
+      }
+    }
+  }
+
+  return False;
 }
 
 void SE_(start_server)(SE_(cmd_server) * server, ThreadId executor_tid) {
@@ -362,34 +429,8 @@ void SE_(start_server)(SE_(cmd_server) * server, ThreadId executor_tid) {
     if (((fds[0].revents & VKI_POLLIN) == VKI_POLLIN) ||
         ((fds[0].revents & VKI_POLLPRI) == VKI_POLLPRI)) {
       if (handle_command(server)) {
-        VG_(umsg)
-        ("Server forking with status %s\n",
-         SE_(server_state_str)(server->current_state));
-        if (!SE_(set_server_state)(server, SERVER_EXECUTING)) {
-          report_error(server, "Invalid server state");
-          continue;
-        }
-        if (VG_(pipe)(server->executor_pipe) < 0) {
-          report_error(server, "Pipe failed");
-          continue;
-        }
-
-        Int pid = VG_(fork)();
-        if (pid < 0) {
-          report_error(server, "Failed to fork child process");
-        } else {
-          if (pid == 0) {
-            VG_(close)(server->executor_pipe[0]);
-            VG_(close)(server->commander_r_fd);
-            VG_(close)(server->commander_w_fd);
-
-            /* Child process exits and starts executing target code */
-            return;
-          } else {
-            server->running_pid = pid;
-            VG_(close)(server->executor_pipe[1]);
-            wait_for_child(server);
-          }
+        if (SE_(fork_and_execute)(server)) {
+          return;
         }
       } else {
         VG_(umsg)
@@ -549,6 +590,7 @@ void SE_(reset_server)(SE_(cmd_server) * server) {
   server->target_func_addr = (Addr)NULL;
   server->using_fuzzed_io_vec = False;
   server->using_existing_io_vec = False;
+  server->attempt_count = 0;
 
   SE_(set_server_state)(server, SERVER_WAIT_FOR_CMD);
 }

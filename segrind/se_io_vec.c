@@ -68,7 +68,7 @@ SizeT SE_(write_io_vec_to_fd)(Int fd, SE_(io_vec) * io_vec) {
   VG_(OSetWord_ResetIter)(io_vec->system_calls);
 
   SE_(cmd_msg) *cmd_msg = SE_(create_cmd_msg)(SEMSG_OK, bytes_written, data);
-  bytes_written = SE_(write_msg_to_fd)(fd, cmd_msg);
+  bytes_written = SE_(write_msg_to_fd)(fd, cmd_msg, False);
   VG_(free)(data);
   SE_(free_msg)(cmd_msg);
 
