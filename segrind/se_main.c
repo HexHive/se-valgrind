@@ -136,8 +136,6 @@ static void SE_(thread_creation)(ThreadId tid, ThreadId child) {
       VG_(free)(target_name);
     }
 
-    VG_(track_pre_deliver_signal)(SE_(signal_handler));
-
     syscalls =
         VG_(OSetWord_Create)(VG_(malloc), SE_IOVEC_MALLOC_TYPE, VG_(free));
     program_states = VG_(newXA)(VG_(malloc), SE_IOVEC_MALLOC_TYPE, VG_(free),
@@ -468,6 +466,7 @@ static void SE_(pre_clo_init)(void) {
   VG_(track_start_client_code)(SE_(start_client_code));
   VG_(track_pre_thread_ll_create)(SE_(thread_creation));
   VG_(track_pre_thread_ll_exit)(SE_(thread_exit));
+  VG_(track_pre_deliver_signal)(SE_(signal_handler));
 
   VG_(needs_syscall_wrapper)(SE_(pre_syscall), SE_(post_syscall));
 

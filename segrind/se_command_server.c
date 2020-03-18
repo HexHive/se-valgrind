@@ -333,7 +333,7 @@ SE_(cmd_server) * SE_(make_server)(Int commander_r_fd, Int commander_w_fd) {
  * @param server
  * @return True if the calling function should return
  */
-Bool SE_(fork_and_execute)(SE_(cmd_server) * server) {
+static Bool SE_(fork_and_execute)(SE_(cmd_server) * server) {
   if (!SE_(set_server_state)(server, SERVER_EXECUTING)) {
     report_error(server, "Invalid server state");
     return False;
