@@ -425,6 +425,8 @@ static void SE_(pre_clo_init)(void) {
 
   VG_(needs_syscall_wrapper)(SE_(pre_syscall), SE_(post_syscall));
 
+  SE_(seed) = (VG_(getpid)() << 9) ^ VG_(getppid)();
+
   SE_(set_clo_defaults)();
 }
 

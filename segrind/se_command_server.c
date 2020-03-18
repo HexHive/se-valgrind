@@ -157,10 +157,9 @@ static Bool fuzz_program_state(SE_(cmd_server) * server) {
   (server->executor_tid, (UChar *)&SE_(current_io_vec)->initial_state, 0, 0,
    sizeof(SE_(current_io_vec)->initial_state));
 #if defined(VGA_amd64)
-  UInt seed = (VG_(getpid)() << 9) ^ VG_(getppid)();
   VG_(umsg)
   ("Initial RDI = 0x%llx\n", SE_(current_io_vec)->initial_state.guest_RDI);
-  SE_(current_io_vec)->initial_state.guest_RDI = VG_(random)(&seed);
+  SE_(current_io_vec)->initial_state.guest_RDI = VG_(random)(&SE_(seed));
   VG_(umsg)
   ("Setting RDI = 0x%llx\n", SE_(current_io_vec)->initial_state.guest_RDI);
   SE_(current_io_vec)->initial_state.guest_RAX = 0;

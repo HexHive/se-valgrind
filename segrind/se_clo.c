@@ -33,10 +33,11 @@ Bool SE_(process_cmd_line_option)(const HChar *arg) {
     if (SE_(MaxDuration) <= 0) {
       VG_(fmsg_bad_option(arg, "max-duration must be larger than zero"));
     }
-  } else if(VG_INT_CLO(arg, "--main-addr", SE_(user_main))) {
-    if(SE_(user_main) <= 0) {
+  } else if (VG_INT_CLO(arg, "--main-addr", SE_(user_main))) {
+    if (SE_(user_main) <= 0) {
       VG_(fmsg_bad_option(arg, "Invalid main address"));
     }
+  } else if (VG_INT_CLO(arg, "--seed", SE_(seed))) {
   }
 
   return False;
