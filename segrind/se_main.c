@@ -163,12 +163,15 @@ static void fix_address_space(Addr faulting_addr) {
   VexGuestArchState *current_state;
   VexArch guest_arch;
   VexArchInfo guest_arch_info;
-  VexAbiInfo vabi;
+  VexAbiInfo abi_info;
   Word idx;
   DisResult res;
 
   VG_(machine_get_VexArchInfo)(&guest_arch, &guest_arch_info);
-  LibVEX_default_VexAbiInfo(&vabi);
+  LibVEX_default_VexAbiInfo(&abi_info);
+
+  /* Try to get around asserts */
+  abi_info.guest_stack_redzone_size = 128;
 
   // TODO: Find how to free IRStmts and IRSB
   IRSB *irsb = emptyIRSB();
@@ -176,7 +179,8 @@ static void fix_address_space(Addr faulting_addr) {
     current_state = VG_(indexXA)(program_states, idx);
     Addr inst_addr = current_state->VG_INSTR_PTR;
     res = DISASM_TO_IR(irsb, (const UChar *)inst_addr, 0, inst_addr, guest_arch,
-                       &guest_arch_info, &vabi, guest_arch_info.endness, False);
+                       &guest_arch_info, &abi_info, guest_arch_info.endness,
+                       False);
     VG_(umsg)("(0x%lx)\tDisResult.len = %u\n", inst_addr, res.len);
   }
 }
