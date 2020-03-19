@@ -25,6 +25,7 @@
 
 #include "se.h"
 #include "se_command_server.h"
+#include "se_defs.h"
 #include "se_io_vec.h"
 
 #include "libvex.h"
@@ -48,6 +49,8 @@ static SE_(cmd_server) * SE_(command_server) = NULL;
 static OSet *syscalls = NULL;
 static XArray *program_states = NULL;
 static HChar *target_name = NULL;
+
+static void SE_(report_failure_to_commander)(void);
 
 /**
  * @brief Writes SEMSG_OK msg with io_vec to the commander process
@@ -154,7 +157,29 @@ static void SE_(post_clo_init)(void) {
  * |=====================================================|
  * @param faulting_addr
  */
-static void fix_address_space(Addr faulting_addr) {}
+static void fix_address_space(Addr faulting_addr) {
+  tl_assert(VG_(sizeXA)(program_states) > 0);
+
+  VexGuestArchState *current_state;
+  VexArch guest_arch;
+  VexArchInfo guest_arch_info;
+  VexAbiInfo vabi;
+  Word idx;
+  DisResult res;
+
+  VG_(machine_get_VexArchInfo)(&guest_arch, &guest_arch_info);
+  LibVEX_default_VexAbiInfo(&vabi);
+
+  // TODO: Find how to free IRStmts and IRSB
+  IRSB *irsb = emptyIRSB();
+  for (idx = VG_(sizeXA)(program_states) - 1; idx >= 0; idx--) {
+    current_state = VG_(indexXA)(program_states, idx);
+    Addr inst_addr = current_state->VG_INSTR_PTR;
+    res = DISASM_TO_IR(irsb, (const UChar *)inst_addr, 0, inst_addr, guest_arch,
+                       &guest_arch_info, &vabi, guest_arch_info.endness, False);
+    VG_(umsg)("(0x%lx)\tDisResult.len = %u\n", inst_addr, res.len);
+  }
+}
 
 /**
  * @brief Recovers pointer input structures in case of a segfault
@@ -162,15 +187,17 @@ static void fix_address_space(Addr faulting_addr) {}
  * @param addr
  */
 static void SE_(signal_handler)(Int sigNo, Addr addr) {
-  if (sigNo == VKI_SIGSEGV && SE_(command_server)->using_fuzzed_io_vec) {
-    fix_address_space(addr);
-    SE_(write_io_vec_to_fd)
-    (SE_(command_server)->executor_pipe[1], SEMSG_NEW_ALLOC,
-     SE_(current_io_vec));
-  } else {
-    SE_(report_failure_to_commander)();
+  if (client_running && target_called) {
+    if (sigNo == VKI_SIGSEGV && SE_(command_server)->using_fuzzed_io_vec) {
+      fix_address_space(addr);
+      SE_(write_io_vec_to_fd)
+      (SE_(command_server)->executor_pipe[1], SEMSG_NEW_ALLOC,
+       SE_(current_io_vec));
+    } else {
+      SE_(report_failure_to_commander)();
+    }
+    SE_(cleanup_and_exit)();
   }
-  SE_(cleanup_and_exit)();
 }
 
 /**
@@ -301,6 +328,7 @@ static void SE_(start_client_code)(ThreadId tid, ULong blocks_dispatched) {
  */
 static void record_current_state(void) {
   if (client_running && main_replaced && target_called) {
+    VG_(umsg)("Recording state for 0x%lx\n", VG_(get_IP)(target_id));
     VexGuestArchState current_state;
     VG_(get_shadow_regs_area)
     (target_id, (UChar *)&current_state, 0, 0, sizeof(current_state));

@@ -2607,7 +2607,7 @@ Bool VG_(extend_stack)(ThreadId tid, Addr addr) {
 }
 
 static fault_catcher_t fault_catcher = NULL;
-static call_fault_catcher_in_generated_code = False;
+static Bool call_fault_catcher_in_generated_code = False;
 
 fault_catcher_t VG_(set_fault_catcher)(fault_catcher_t catcher) {
   fault_catcher_t prev_catcher = fault_catcher;
