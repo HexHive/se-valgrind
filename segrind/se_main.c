@@ -60,8 +60,8 @@ static SizeT SE_(write_io_vec_to_cmd_server)(SE_(io_vec) * io_vec,
   tl_assert(SE_(command_server));
   tl_assert(io_vec);
 
-  SizeT bytes_written =
-      SE_(write_io_vec_to_fd)(SE_(command_server)->executor_pipe[1], io_vec);
+  SizeT bytes_written = SE_(write_io_vec_to_fd)(
+      SE_(command_server)->executor_pipe[1], SEMSG_OK, io_vec);
 
   if (free_io_vec) {
     SE_(free_io_vec)(io_vec);
@@ -144,12 +144,31 @@ static void SE_(post_clo_init)(void) {
   tl_assert(SE_(command_server));
 }
 
+/**
+ * @brief Performs taint analysis of executed instructions to find source of
+ * segfault. Backwards taint propagation policy:
+ * |=====================================================|
+ * | Instruction | t tainted? | u Tainted | Taint Policy |
+ * |-----------------------------------------------------|
+ * |   t = u     |      Y     |     N     |  T(u); R(t)  |
+ * |=====================================================|
+ * @param faulting_addr
+ */
+static void fix_address_space(Addr faulting_addr) {}
+
+/**
+ * @brief Recovers pointer input structures in case of a segfault
+ * @param sigNo
+ * @param addr
+ */
 static void SE_(signal_handler)(Int sigNo, Addr addr) {
-  VG_(umsg)("signal handler called: %d\n", sigNo);
-  if (sigNo == VKI_SIGSEGV) {
-    SE_(write_msg_to_fd)
-    (SE_(command_server)->executor_pipe[1],
-     SE_(create_cmd_msg)(SEMSG_NEW_ALLOC, 0, NULL), True);
+  if (sigNo == VKI_SIGSEGV && SE_(command_server)->using_fuzzed_io_vec) {
+    fix_address_space(addr);
+    SE_(write_io_vec_to_fd)
+    (SE_(command_server)->executor_pipe[1], SEMSG_NEW_ALLOC,
+     SE_(current_io_vec));
+  } else {
+    SE_(report_failure_to_commander)();
   }
   SE_(cleanup_and_exit)();
 }
@@ -171,7 +190,6 @@ static void SE_(thread_creation)(ThreadId tid, ThreadId child) {
     }
 
     /* Child executors arrive here */
-    VG_(umsg)("Executor running\n");
     VG_(clo_vex_control).iropt_register_updates_default =
         VexRegUpdAllregsAtEachInsn;
     if (syscalls) {
@@ -210,9 +228,7 @@ static void SE_(report_success_to_commader)(void) {
   tl_assert(main_replaced);
 
   if (SE_(command_server)->using_fuzzed_io_vec) {
-    VG_(umsg)("Sending IOVec to server...");
     SE_(send_fuzzed_io_vec)();
-    VG_(umsg)("done!\n");
   }
 
   SE_(cleanup_and_exit)();

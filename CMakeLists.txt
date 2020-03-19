@@ -24,7 +24,7 @@ set(VALGRIND_TOOL_INCS
         ${VALGRIND_INCS}
         ${VALGRIND_TOOL_DIR}/se_command_server.h
         ${VALGRIND_TOOL_DIR}/se_io_vec.h
-        )
+        ${VALGRIND_TOOL_DIR}/se_defs.h)
 
 add_custom_command(
         OUTPUT ${VALGRIND_INSTALL_DIR}

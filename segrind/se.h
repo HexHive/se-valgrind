@@ -22,6 +22,7 @@
 #include "pub_tool_threadstate.h"
 #include "pub_tool_tooliface.h"
 #include "pub_tool_vki.h"
+#include "se_defs.h"
 
 Int SE_(cmd_in), SE_(cmd_out), SE_(log);
 

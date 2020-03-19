@@ -30,7 +30,8 @@ void SE_(free_io_vec)(SE_(io_vec) * io_vec) {
   VG_(free)(io_vec);
 }
 
-SizeT SE_(write_io_vec_to_fd)(Int fd, SE_(io_vec) * io_vec) {
+SizeT SE_(write_io_vec_to_fd)(Int fd, SE_(cmd_msg_t) msg_type,
+                              SE_(io_vec) * io_vec) {
   tl_assert(fd > 0);
   tl_assert(io_vec);
   HChar *data =
@@ -67,7 +68,7 @@ SizeT SE_(write_io_vec_to_fd)(Int fd, SE_(io_vec) * io_vec) {
 
   VG_(OSetWord_ResetIter)(io_vec->system_calls);
 
-  SE_(cmd_msg) *cmd_msg = SE_(create_cmd_msg)(SEMSG_OK, bytes_written, data);
+  SE_(cmd_msg) *cmd_msg = SE_(create_cmd_msg)(msg_type, bytes_written, data);
   bytes_written = SE_(write_msg_to_fd)(fd, cmd_msg, False);
   VG_(free)(data);
   SE_(free_msg)(cmd_msg);

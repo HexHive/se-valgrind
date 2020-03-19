@@ -9,6 +9,7 @@
 #include "pub_tool_guest.h"
 #include "pub_tool_oset.h"
 #include "se.h"
+#include "se_command.h"
 
 const HChar *SE_IOVEC_MALLOC_TYPE;
 
@@ -33,10 +34,12 @@ void SE_(free_io_vec)(SE_(io_vec) * io_vec);
 /**
  * @brief Writes io_vec to specified file descriptor
  * @param fd
+ * @param msg_type
  * @param io_vec
  * @return bytes written or 0 on error
  */
-SizeT SE_(write_io_vec_to_fd)(Int fd, SE_(io_vec) * io_vec);
+SizeT SE_(write_io_vec_to_fd)(Int fd, SE_(cmd_msg_t) msg_type,
+                              SE_(io_vec) * io_vec);
 
 /**
  * @brief Computes the number of bytes io_vec will write to a file descriptor
