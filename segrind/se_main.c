@@ -182,6 +182,17 @@ static void SE_(post_clo_init)(void) {
   tl_assert(SE_(command_server));
 }
 
+static Addr get_IRSB_start(IRSB *irsb) {
+  tl_assert(irsb);
+  for (Int i = 0; i < irsb->stmts_used; i++) {
+    IRStmt *stmt = irsb->stmts[i];
+    if (stmt->tag == Ist_IMark) {
+      return stmt->Ist.IMark.addr;
+    }
+  }
+  tl_assert(0);
+}
+
 /**
  * @brief Performs taint analysis of executed instructions to find source of
  * segfault. Backwards taint propagation policy:
@@ -200,30 +211,38 @@ static void fix_address_space(Addr faulting_addr) {
   VexArchInfo guest_arch_info;
   VexAbiInfo abi_info;
   Word idx;
-  DisResult res;
+  UWord irsb_start = 0, irsb_end, val;
+  IRSB *irsb = NULL;
+  VexGuestExtents vge;
 
   VG_(machine_get_VexArchInfo)(&guest_arch, &guest_arch_info);
   LibVEX_default_VexAbiInfo(&abi_info);
 
   /* Try to get around asserts */
+  // FIXME: Is this value ok for other architectures?
   abi_info.guest_stack_redzone_size = 128;
 
   for (idx = VG_(sizeXA)(program_states) - 1; idx >= 0; idx--) {
-    vexSetAllocModeTEMP_and_clear();
-    IRSB *irsb = emptyIRSB();
     current_state = VG_(indexXA)(program_states, idx);
     Addr inst_addr = current_state->VG_INSTR_PTR;
-    res = DISASM_TO_IR(irsb, (const UChar *)inst_addr, 0, inst_addr, guest_arch,
-                       &guest_arch_info, &abi_info, guest_arch_info.endness,
-                       False);
-    if (res.len == 0) {
-      VG_(printf)("Could not disassemble 0x%lx!\n", inst_addr);
-      continue;
+    VG_(lookupRangeMap)
+    (&irsb_start, &irsb_end, &val, irsb_ranges, (UWord)inst_addr);
+    if (!val) {
+      VG_(umsg)("Could not find IRSB bounds at 0x%lx!\n", inst_addr);
+      SE_(report_failure_to_commander)();
     }
 
-    VG_(printf)("0x%lx:\n", inst_addr);
-    ppIRSB(irsb);
-    VG_(printf)("\n");
+    if (!irsb || irsb_start != get_IRSB_start(irsb)) {
+      VexRegisterUpdates vru = VexRegUpdAllregsAtEachInsn;
+      vexSetAllocModeTEMP_and_clear();
+      irsb =
+          bb_to_IR(&vge, NULL, NULL, NULL, NULL, &vru, NULL, SE_DISASM_TO_IR,
+                   (const UChar *)irsb_start, (Addr)irsb_start, NULL,
+                   guest_arch_info.endness, False, guest_arch, &guest_arch_info,
+                   &abi_info, SE_GUEST_WORD_TYPE, NULL, NULL, SE_offB_CMSTART,
+                   SE_offB_CMLEN, SE_offB_GUEST_IP, SE_szB_GUEST_IP);
+      ppIRSB(irsb);
+    }
   }
 }
 
