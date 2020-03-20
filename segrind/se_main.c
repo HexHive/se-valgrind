@@ -27,6 +27,7 @@
 #include "se_command_server.h"
 #include "se_defs.h"
 #include "se_io_vec.h"
+#include <libvex_ir.h>
 
 #include "libvex.h"
 #include "pub_tool_basics.h"
@@ -35,19 +36,49 @@
 #include "pub_tool_mallocfree.h"
 #include "pub_tool_options.h"
 #include "pub_tool_oset.h"
+#include "pub_tool_rangemap.h"
 #include "pub_tool_signals.h"
 #include "pub_tool_stacktrace.h"
 #include "pub_tool_xarray.h"
 
 #include "../coregrind/pub_core_scheduler.h"
 
+/**
+ * @brief Is the guest executing code?
+ */
 static Bool client_running = False;
+/**
+ * @brief Has the reference to main been replaced with the target function?
+ */
 static Bool main_replaced = False;
+/**
+ * @brief Has the target function been called?
+ */
 static Bool target_called = False;
+/**
+ * @brief The executor thread
+ */
 static ThreadId target_id = VG_INVALID_THREADID;
+/**
+ * @brief The server that receives commands from outside, and forks to execute
+ * the target function
+ */
 static SE_(cmd_server) * SE_(command_server) = NULL;
+/**
+ * @brief The set of unique system calls executed by the target function
+ */
 static OSet *syscalls = NULL;
+/**
+ * @brief Per-instruction program states saved for taint analysis
+ */
 static XArray *program_states = NULL;
+/**
+ * @brief The range of addresses an IRSB covers
+ */
+static RangeMap *irsb_ranges = NULL;
+/**
+ * @brief The name of the target function
+ */
 static HChar *target_name = NULL;
 
 static void SE_(report_failure_to_commander)(void);
@@ -117,6 +148,10 @@ static void SE_(cleanup_and_exit)(void) {
     VG_(free)(target_name);
     target_name = NULL;
   }
+  if (irsb_ranges) {
+    VG_(deleteRangeMap)(irsb_ranges);
+    irsb_ranges = NULL;
+  }
 
   if (SE_(cmd_in) > 0) {
     VG_(close)(SE_(cmd_in));
@@ -173,15 +208,22 @@ static void fix_address_space(Addr faulting_addr) {
   /* Try to get around asserts */
   abi_info.guest_stack_redzone_size = 128;
 
-  // TODO: Find how to free IRStmts and IRSB
-  IRSB *irsb = emptyIRSB();
   for (idx = VG_(sizeXA)(program_states) - 1; idx >= 0; idx--) {
+    vexSetAllocModeTEMP_and_clear();
+    IRSB *irsb = emptyIRSB();
     current_state = VG_(indexXA)(program_states, idx);
     Addr inst_addr = current_state->VG_INSTR_PTR;
     res = DISASM_TO_IR(irsb, (const UChar *)inst_addr, 0, inst_addr, guest_arch,
                        &guest_arch_info, &abi_info, guest_arch_info.endness,
                        False);
-    VG_(umsg)("(0x%lx)\tDisResult.len = %u\n", inst_addr, res.len);
+    if (res.len == 0) {
+      VG_(printf)("Could not disassemble 0x%lx!\n", inst_addr);
+      continue;
+    }
+
+    VG_(printf)("0x%lx:\n", inst_addr);
+    ppIRSB(irsb);
+    VG_(printf)("\n");
   }
 }
 
@@ -232,11 +274,15 @@ static void SE_(thread_creation)(ThreadId tid, ThreadId child) {
     if (target_name) {
       VG_(free)(target_name);
     }
+    if (irsb_ranges) {
+      VG_(deleteRangeMap)(irsb_ranges);
+    }
 
-    syscalls =
-        VG_(OSetWord_Create)(VG_(malloc), SE_IOVEC_MALLOC_TYPE, VG_(free));
-    program_states = VG_(newXA)(VG_(malloc), SE_IOVEC_MALLOC_TYPE, VG_(free),
+    syscalls = VG_(OSetWord_Create)(VG_(malloc), SE_TOOL_ALLOC_STR, VG_(free));
+    program_states = VG_(newXA)(VG_(malloc), SE_TOOL_ALLOC_STR, VG_(free),
                                 sizeof(VexGuestArchState));
+    irsb_ranges =
+        VG_(newRangeMap)(VG_(malloc), SE_TOOL_ALLOC_STR, VG_(free), 0);
 
     VG_(set_fault_catcher)(SE_(signal_handler));
     VG_(set_call_fault_catcher_in_generated)(True);
@@ -353,6 +399,8 @@ static IRSB *SE_(instrument_target)(IRSB *bb) {
   IRSB *bbOut;
   Int i;
   IRDirty *di;
+  UWord minAddress = 0;
+  UWord maxAddress = 0;
 
   bbOut = deepCopyIRSBExceptStmts(bb);
 
@@ -380,6 +428,12 @@ static IRSB *SE_(instrument_target)(IRSB *bb) {
     }
     switch (stmt->tag) {
     case Ist_IMark:
+      if (minAddress == 0) {
+        minAddress = (UWord)stmt->Ist.IMark.addr;
+      }
+      if (stmt->Ist.IMark.addr > maxAddress) {
+        maxAddress = (UWord)stmt->Ist.IMark.addr;
+      }
       addStmtToIRSB(bbOut, stmt);
       if (stmt->Ist.IMark.addr == SE_(command_server)->target_func_addr) {
         di = unsafeIRDirty_0_N(0, "jump_to_target_function",
@@ -408,6 +462,12 @@ static IRSB *SE_(instrument_target)(IRSB *bb) {
       addStmtToIRSB(bbOut, stmt);
       break;
     }
+  }
+
+  UWord keyMin, keyMax, val;
+  VG_(lookupRangeMap)(&keyMin, &keyMax, &val, irsb_ranges, minAddress);
+  if (val == 0) {
+    VG_(bindRangeMap)(irsb_ranges, minAddress, maxAddress, minAddress);
   }
 
   return bbOut;
