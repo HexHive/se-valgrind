@@ -213,7 +213,10 @@ static void fix_address_space(Addr faulting_addr) {
   Word idx;
   UWord irsb_start = 0, irsb_end, val;
   IRSB *irsb = NULL;
-  VexGuestExtents vge;
+  OSet *tainted_temporaries = NULL;
+
+  OSet *tainted_locations =
+      VG_(OSetWord_Create)(VG_(malloc), SE_TOOL_ALLOC_STR, VG_(free));
 
   VG_(machine_get_VexArchInfo)(&guest_arch, &guest_arch_info);
   LibVEX_default_VexAbiInfo(&abi_info);
@@ -222,28 +225,99 @@ static void fix_address_space(Addr faulting_addr) {
   // FIXME: Is this value ok for other architectures?
   abi_info.guest_stack_redzone_size = 128;
 
+  Bool found_faulting_addr = False;
+
   for (idx = VG_(sizeXA)(program_states) - 1; idx >= 0; idx--) {
     current_state = VG_(indexXA)(program_states, idx);
     Addr inst_addr = current_state->VG_INSTR_PTR;
+
+    /* Find the basic block range we are currently in */
     VG_(lookupRangeMap)
     (&irsb_start, &irsb_end, &val, irsb_ranges, (UWord)inst_addr);
     if (!val) {
       VG_(umsg)("Could not find IRSB bounds at 0x%lx!\n", inst_addr);
       SE_(report_failure_to_commander)();
     }
+    VG_(umsg)
+    ("Found IRSB range [0x%lx - 0x%lx] for instruction \n", irsb_start,
+     irsb_end, inst_addr);
 
     if (!irsb || irsb_start != get_IRSB_start(irsb)) {
-      VexRegisterUpdates vru = VexRegUpdAllregsAtEachInsn;
+      VG_(umsg)
+      ("Creating new IRSB for range [0x%lx - 0x%lx]\n", irsb_start, irsb_end);
       vexSetAllocModeTEMP_and_clear();
-      irsb =
-          bb_to_IR(&vge, NULL, NULL, NULL, NULL, &vru, NULL, SE_DISASM_TO_IR,
-                   (const UChar *)irsb_start, (Addr)irsb_start, NULL,
-                   guest_arch_info.endness, False, guest_arch, &guest_arch_info,
-                   &abi_info, SE_GUEST_WORD_TYPE, NULL, NULL, SE_offB_CMSTART,
-                   SE_offB_CMLEN, SE_offB_GUEST_IP, SE_szB_GUEST_IP);
-      ppIRSB(irsb);
+      Long offset = 0;
+      irsb = emptyIRSB();
+      if (tainted_temporaries) {
+        VG_(OSetWord_Destroy)(tainted_temporaries);
+      }
+      tainted_temporaries =
+          VG_(OSetWord_Create)(VG_(malloc), SE_TOOL_ALLOC_STR, VG_(free));
+
+      /* Find the instructions that are part of the basic block */
+      Word bbIdx;
+      for (bbIdx = idx - 1; bbIdx >= 0; bbIdx--) {
+        VexGuestArchState *tmpState = VG_(indexXA)(program_states, bbIdx);
+        if (!(tmpState->VG_INSTR_PTR >= irsb_start &&
+              tmpState->VG_INSTR_PTR <= irsb_end)) {
+          break;
+        }
+      }
+
+      /* Recreate executed block */
+      for (Word tmpIdx = bbIdx + 1; tmpIdx <= idx; tmpIdx++) {
+        VexGuestArchState *tmpState = VG_(indexXA)(program_states, tmpIdx);
+        VG_(umsg)
+        ("Translating Instruction %ld (max %ld) (0x%lx)\n", tmpIdx, idx,
+         tmpState->VG_INSTR_PTR);
+        offset = (tmpState->VG_INSTR_PTR - irsb_start);
+        SE_DISASM_TO_IR(irsb, (const UChar *)irsb_start, offset,
+                        tmpState->VG_INSTR_PTR, guest_arch, &guest_arch_info,
+                        &abi_info, guest_arch_info.endness, False);
+        /* Purposefully add IMark stmt after other instructions since we will
+         * be going through the instructions backwards */
+        addStmtToIRSB(irsb, IRStmt_IMark(tmpState->VG_INSTR_PTR, 1, 0));
+      }
+
+      for (Int i = irsb->stmts_used - 1; i >= 0; i--) {
+        IRStmt *stmt = irsb->stmts[i];
+        Bool taint_found = (VG_(OSetWord_Size) != 0 &&
+                            VG_(OSetWord_Size)(tainted_temporaries) != 0);
+        switch (stmt->tag) {
+        case Ist_IMark:
+          if (stmt->Ist.IMark.addr == faulting_addr) {
+            found_faulting_addr = True;
+          }
+          continue;
+        case Ist_Put:
+          if (found_faulting_addr) {
+            if (!taint_found) {
+              IRExpr *data = stmt->Ist.Put.data;
+              IRExpr *addr;
+
+              switch (data->tag) {
+              case Iex_Load:
+                addr = data->Iex.Load.addr;
+                break;
+                // FIXME: Handle more cases
+              default:
+                continue;
+              }
+            }
+          }
+        default:
+          continue;
+        }
+      }
+
+      idx = bbIdx;
     }
   }
+
+  if (tainted_temporaries) {
+    VG_(OSetWord_Destroy)(tainted_temporaries);
+  }
+  VG_(OSetWord_Destroy)(tainted_locations);
 }
 
 /**
@@ -397,7 +471,7 @@ static void SE_(start_client_code)(ThreadId tid, ULong blocks_dispatched) {
  */
 static void record_current_state(void) {
   if (client_running && main_replaced && target_called) {
-    VG_(umsg)("Recording state for 0x%lx\n", VG_(get_IP)(target_id));
+    //    VG_(umsg)("Recording state for 0x%lx\n", VG_(get_IP)(target_id));
     VexGuestArchState current_state;
     VG_(get_shadow_regs_area)
     (target_id, (UChar *)&current_state, 0, 0, sizeof(current_state));
@@ -420,6 +494,9 @@ static IRSB *SE_(instrument_target)(IRSB *bb) {
   IRDirty *di;
   UWord minAddress = 0;
   UWord maxAddress = 0;
+
+  ppIRSB(bb);
+  VG_(umsg)("\n");
 
   bbOut = deepCopyIRSBExceptStmts(bb);
 
