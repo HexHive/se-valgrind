@@ -16,6 +16,7 @@ set(VALGRIND_TOOL_SRCS
         ${VALGRIND_TOOL_DIR}/se_command.c
         ${VALGRIND_TOOL_DIR}/se_command_server.c
         ${VALGRIND_TOOL_DIR}/se_io_vec.c
+        ${VALGRIND_TOOL_DIR}/se_taint.c
         )
 
 set(VALGRIND_TOOL_INCS
@@ -24,7 +25,9 @@ set(VALGRIND_TOOL_INCS
         ${VALGRIND_INCS}
         ${VALGRIND_TOOL_DIR}/se_command_server.h
         ${VALGRIND_TOOL_DIR}/se_io_vec.h
-        ${VALGRIND_TOOL_DIR}/se_defs.h)
+        ${VALGRIND_TOOL_DIR}/se_defs.h
+        ${VALGRIND_TOOL_DIR}/se_taint.h
+        )
 
 add_custom_command(
         OUTPUT ${VALGRIND_INSTALL_DIR}

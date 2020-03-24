@@ -27,9 +27,10 @@
 #include "se_command_server.h"
 #include "se_defs.h"
 #include "se_io_vec.h"
-#include <libvex_ir.h>
+#include "se_taint.h"
 
 #include "libvex.h"
+#include "libvex_ir.h"
 #include "pub_tool_basics.h"
 #include "pub_tool_guest.h"
 #include "pub_tool_libcproc.h"
@@ -201,10 +202,13 @@ static Addr get_IRSB_start(IRSB *irsb) {
  * |-----------------------------------------------------|
  * |   t = u     |      Y     |     N     |  T(u); R(t)  |
  * |=====================================================|
- * @param faulting_addr
  */
-static void fix_address_space(Addr faulting_addr) {
+static void fix_address_space() {
   tl_assert(VG_(sizeXA)(program_states) > 0);
+
+  VexGuestArchState *last_state =
+      VG_(indexXA)(program_states, VG_(sizeXA)(program_states) - 1);
+  Addr faulting_addr = last_state->VG_INSTR_PTR;
 
   VexGuestArchState *current_state;
   VexArch guest_arch;
@@ -213,10 +217,8 @@ static void fix_address_space(Addr faulting_addr) {
   Word idx;
   UWord irsb_start = 0, irsb_end, val;
   IRSB *irsb = NULL;
-  OSet *tainted_temporaries = NULL;
 
-  OSet *tainted_locations =
-      VG_(OSetWord_Create)(VG_(malloc), SE_TOOL_ALLOC_STR, VG_(free));
+  SE_(init_taint_analysis)(program_states);
 
   VG_(machine_get_VexArchInfo)(&guest_arch, &guest_arch_info);
   LibVEX_default_VexAbiInfo(&abi_info);
@@ -231,15 +233,22 @@ static void fix_address_space(Addr faulting_addr) {
     current_state = VG_(indexXA)(program_states, idx);
     Addr inst_addr = current_state->VG_INSTR_PTR;
 
+    SE_(clear_temps)();
+
     /* Find the basic block range we are currently in */
     VG_(lookupRangeMap)
     (&irsb_start, &irsb_end, &val, irsb_ranges, (UWord)inst_addr);
     if (!val) {
-      VG_(umsg)("Could not find IRSB bounds at 0x%lx!\n", inst_addr);
+      const HChar *func_name;
+      VG_(get_fnname)
+      (VG_(current_DiEpoch)(), SE_(command_server)->target_func_addr,
+       &func_name);
+      VG_(umsg)
+      ("Could not find IRSB bounds at 0x%lx (%s)!\n", inst_addr, func_name);
       SE_(report_failure_to_commander)();
     }
     VG_(umsg)
-    ("Found IRSB range [0x%lx - 0x%lx] for instruction \n", irsb_start,
+    ("Found IRSB range [0x%lx - 0x%lx] for instruction 0x%lx\n", irsb_start,
      irsb_end, inst_addr);
 
     if (!irsb || irsb_start != get_IRSB_start(irsb)) {
@@ -248,11 +257,6 @@ static void fix_address_space(Addr faulting_addr) {
       vexSetAllocModeTEMP_and_clear();
       Long offset = 0;
       irsb = emptyIRSB();
-      if (tainted_temporaries) {
-        VG_(OSetWord_Destroy)(tainted_temporaries);
-      }
-      tainted_temporaries =
-          VG_(OSetWord_Create)(VG_(malloc), SE_TOOL_ALLOC_STR, VG_(free));
 
       /* Find the instructions that are part of the basic block */
       Word bbIdx;
@@ -268,8 +272,8 @@ static void fix_address_space(Addr faulting_addr) {
       for (Word tmpIdx = bbIdx + 1; tmpIdx <= idx; tmpIdx++) {
         VexGuestArchState *tmpState = VG_(indexXA)(program_states, tmpIdx);
         VG_(umsg)
-        ("Translating Instruction %ld (max %ld) (0x%lx)\n", tmpIdx, idx,
-         tmpState->VG_INSTR_PTR);
+        ("Translating Instruction %ld (max %ld) (%p)\n", tmpIdx, idx,
+         (void *)tmpState->VG_INSTR_PTR);
         offset = (tmpState->VG_INSTR_PTR - irsb_start);
         SE_DISASM_TO_IR(irsb, (const UChar *)irsb_start, offset,
                         tmpState->VG_INSTR_PTR, guest_arch, &guest_arch_info,
@@ -281,30 +285,92 @@ static void fix_address_space(Addr faulting_addr) {
 
       for (Int i = irsb->stmts_used - 1; i >= 0; i--) {
         IRStmt *stmt = irsb->stmts[i];
-        Bool taint_found = (VG_(OSetWord_Size) != 0 &&
-                            VG_(OSetWord_Size)(tainted_temporaries) != 0);
+        Word stmt_idx = bbIdx + i;
+        ppIRStmt(stmt);
+        VG_(printf)("\n");
+        Bool taint_found = SE_(taint_found)();
         switch (stmt->tag) {
         case Ist_IMark:
-          if (stmt->Ist.IMark.addr == faulting_addr) {
+          if (!found_faulting_addr && stmt->Ist.IMark.addr == faulting_addr) {
+            VG_(umsg)("Found faulting address %p\n", (void *)faulting_addr);
             found_faulting_addr = True;
+          }
+          continue;
+        case Ist_Store:
+          if (found_faulting_addr) {
+            if (!taint_found) {
+              SE_(taint_IRExpr)(stmt->Ist.Store.addr, i);
+            } else {
+              IRExpr *data = stmt->Ist.Store.data;
+              IRExpr *addr = stmt->Ist.Store.addr;
+              if (SE_(is_IRExpr_tainted)(addr, stmt_idx) &&
+                  !SE_(is_IRExpr_tainted)(data, stmt_idx)) {
+                SE_(remove_IRExpr_taint)(addr, stmt_idx);
+                SE_(taint_IRExpr)(data, stmt_idx);
+              }
+            }
           }
           continue;
         case Ist_Put:
           if (found_faulting_addr) {
-            if (!taint_found) {
-              IRExpr *data = stmt->Ist.Put.data;
-              IRExpr *addr;
+            IRExpr *data = stmt->Ist.Put.data;
+            IRExpr *addr = NULL;
 
-              switch (data->tag) {
-              case Iex_Load:
-                addr = data->Iex.Load.addr;
-                break;
-                // FIXME: Handle more cases
-              default:
-                continue;
+            switch (data->tag) {
+            case Iex_Load:
+              addr = data->Iex.Load.addr;
+              break;
+            case Iex_Const:
+              /* TODO: Determine how global data is accessed, because continuing
+               * might not be the correct way to handle this */
+              continue;
+            case Iex_Unop:
+              addr = SE_(get_IRExpr)(data);
+              break;
+            case Iex_Get:
+              addr = data;
+              break;
+            default:
+              VG_(umsg)("Unhandled data IRExpr: ");
+              ppIRExpr(data);
+              VG_(umsg)("\n");
+              tl_assert(0);
+            }
+
+            tl_assert(addr);
+            switch (addr->tag) {
+            case Iex_RdTmp:
+            case Iex_Get:
+            case Iex_Load:
+              if (!taint_found) {
+                SE_(taint_IRExpr)(addr, i);
+              } else {
+                if (SE_(guest_reg_tainted)(stmt->Ist.Put.offset)) {
+                  SE_(remove_tainted_reg)(stmt->Ist.Put.offset);
+                  SE_(taint_IRExpr)(addr, stmt_idx);
+                }
               }
+              continue;
+            case Iex_Const:
+              continue;
+            default:
+              /* FIXME: Handle more cases */
+              VG_(umsg)("Unhandled addr IRExpr: ");
+              ppIRExpr(addr);
+              VG_(umsg)("\n");
+              tl_assert(0);
             }
           }
+          continue;
+        case Ist_WrTmp:
+          if (found_faulting_addr) {
+            if (SE_(temp_tainted)(stmt->Ist.WrTmp.tmp)) {
+              IRExpr *data = stmt->Ist.WrTmp.data;
+              SE_(remove_tainted_temp)(stmt->Ist.WrTmp.tmp);
+              SE_(taint_IRExpr)(data, stmt_idx);
+            }
+          }
+          continue;
         default:
           continue;
         }
@@ -314,10 +380,18 @@ static void fix_address_space(Addr faulting_addr) {
     }
   }
 
-  if (tainted_temporaries) {
-    VG_(OSetWord_Destroy)(tainted_temporaries);
+  OSet *tainted_locations = SE_(get_tainted_locations)();
+
+  SE_(tainted_loc) * loc;
+  VG_(umsg)("Tainted offsets: ");
+  while ((loc = VG_(OSetGen_Next)(tainted_locations))) {
+    SE_(ppTaintedLocation)(loc);
   }
-  VG_(OSetWord_Destroy)(tainted_locations);
+  VG_(umsg)("\n");
+#if defined(VGA_amd64)
+  VG_(umsg)
+  ("RDI Offset: %d\n", offsetof(VexGuestAMD64State, guest_RDI));
+#endif
 }
 
 /**
@@ -328,7 +402,7 @@ static void fix_address_space(Addr faulting_addr) {
 static void SE_(signal_handler)(Int sigNo, Addr addr) {
   if (client_running && target_called) {
     if (sigNo == VKI_SIGSEGV && SE_(command_server)->using_fuzzed_io_vec) {
-      fix_address_space(addr);
+      fix_address_space();
       SE_(write_io_vec_to_fd)
       (SE_(command_server)->executor_pipe[1], SEMSG_NEW_ALLOC,
        SE_(current_io_vec));
@@ -524,7 +598,7 @@ static IRSB *SE_(instrument_target)(IRSB *bb) {
     }
     switch (stmt->tag) {
     case Ist_IMark:
-      if (minAddress == 0) {
+      if (minAddress == 0 || minAddress > (UWord)stmt->Ist.IMark.addr) {
         minAddress = (UWord)stmt->Ist.IMark.addr;
       }
       if (stmt->Ist.IMark.addr > maxAddress) {

@@ -7,7 +7,7 @@
 #include <unistd.h>
 
 int __attribute__((noinline)) foo(int *a, int b, int c) {
-  printf("foo called with a = %p b = %d and c = %d\n", a, b, c);
+  //  printf("foo called with a = %p b = %d and c = %d\n", a, b, c);
   *a = b / c;
   return 0;
 }

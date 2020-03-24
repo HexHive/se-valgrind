@@ -6,7 +6,6 @@
 #define SE_VALGRIND_SE_DEFS_H
 
 #include "../VEX/priv/guest_generic_bb_to_IR.h"
-//#include "../VEX/priv/main_util.h"
 #include "../coregrind/pub_core_machine.h"
 
 /**
