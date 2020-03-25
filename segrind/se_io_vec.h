@@ -21,6 +21,7 @@ typedef struct io_vec {
   VexGuestArchState expected_state;
 
   OSet *system_calls;
+  OSet *
 } SE_(io_vec);
 
 /**

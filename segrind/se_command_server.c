@@ -250,6 +250,7 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
   tl_assert(server->using_fuzzed_io_vec);
 
   // TODO: Implement fetching of new alloc
+
   SE_(set_server_state)(server, SERVER_WAIT_FOR_CMD);
   fuzz_program_state(server);
 

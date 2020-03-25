@@ -28,7 +28,6 @@
 #include "se_defs.h"
 #include "se_io_vec.h"
 #include "se_taint.h"
-#include <libvex_ir.h>
 
 #include "libvex.h"
 #include "libvex_ir.h"
@@ -338,9 +337,9 @@ static void fix_address_space() {
               SE_(remove_IRExpr_taint)(stmt->Ist.WrTmp.data, stmt_idx);
               SE_(taint_temp)(stmt->Ist.WrTmp.tmp);
               VG_(printf)("\tRestarting analysis\n");
-                stmt_idx = orig_stmt_idx;
-                i = irsb->stmts_used;
-                found_faulting_addr = !in_first_block;
+              stmt_idx = orig_stmt_idx;
+              i = irsb->stmts_used;
+              found_faulting_addr = !in_first_block;
             }
           }
           continue;
@@ -355,7 +354,27 @@ static void fix_address_space() {
   }
 
   OSet *tainted_locations = SE_(get_tainted_locations)();
-  tl_assert(VG_(OSetGen_Size)(tainted_locations) > 0);
+  Word num_areas = VG_(OSetGen_Size)(tainted_locations);
+  tl_assert(num_areas > 0);
+
+  UChar *buf =
+      VG_(malloc)(SE_TOOL_ALLOC_STR,
+                  sizeof(num_areas) + num_areas * sizeof(SE_(tainted_loc)));
+  VG_(memcpy)(buf, &num_areas, sizeof(num_areas));
+  Word offset = sizeof(num_areas);
+  SE_(tainted_loc) * loc;
+  while ((loc = VG_(OSetGen_Next)(tainted_locations))) {
+    VG_(memcpy)(buf + offset, loc, sizeof(*loc));
+    offset += sizeof(*loc);
+  }
+
+  SE_(cmd_msg) *msg = SE_(create_cmd_msg)(
+      SEMSG_NEW_ALLOC, sizeof(num_areas) + num_areas * sizeof(SE_(tainted_loc)),
+      buf);
+
+  SE_(write_msg_to_fd)(SE_(command_server)->executor_pipe[1], msg, True);
+
+  SE_(end_taint_analysis)();
 }
 
 /**
@@ -367,9 +386,6 @@ static void SE_(signal_handler)(Int sigNo, Addr addr) {
   if (client_running && target_called) {
     if (sigNo == VKI_SIGSEGV && SE_(command_server)->using_fuzzed_io_vec) {
       fix_address_space();
-      SE_(write_io_vec_to_fd)
-      (SE_(command_server)->executor_pipe[1], SEMSG_NEW_ALLOC,
-       SE_(current_io_vec));
     } else {
       SE_(report_failure_to_commander)();
     }
