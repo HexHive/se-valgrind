@@ -28,6 +28,7 @@
 #include "se_defs.h"
 #include "se_io_vec.h"
 #include "se_taint.h"
+#include <libvex_ir.h>
 
 #include "libvex.h"
 #include "libvex_ir.h"
@@ -228,7 +229,10 @@ static void fix_address_space() {
   abi_info.guest_stack_redzone_size = 128;
 
   Bool found_faulting_addr = False;
+  Bool in_first_block = True;
+  Int reset_count = 0;
 
+  Word stmt_idx = VG_(sizeXA)(program_states);
   for (idx = VG_(sizeXA)(program_states) - 1; idx >= 0; idx--) {
     current_state = VG_(indexXA)(program_states, idx);
     Addr inst_addr = current_state->VG_INSTR_PTR;
@@ -283,16 +287,17 @@ static void fix_address_space() {
         addStmtToIRSB(irsb, IRStmt_IMark(tmpState->VG_INSTR_PTR, 1, 0));
       }
 
+      Word orig_stmt_idx = stmt_idx;
       for (Int i = irsb->stmts_used - 1; i >= 0; i--) {
         IRStmt *stmt = irsb->stmts[i];
-        Word stmt_idx = bbIdx + i;
         ppIRStmt(stmt);
         VG_(printf)("\n");
         Bool taint_found = SE_(taint_found)();
         switch (stmt->tag) {
         case Ist_IMark:
+          stmt_idx--;
           if (!found_faulting_addr && stmt->Ist.IMark.addr == faulting_addr) {
-            VG_(umsg)("Found faulting address %p\n", (void *)faulting_addr);
+            VG_(printf)("\tFound faulting address %p\n", (void *)faulting_addr);
             found_faulting_addr = True;
           }
           continue;
@@ -314,51 +319,11 @@ static void fix_address_space() {
         case Ist_Put:
           if (found_faulting_addr) {
             IRExpr *data = stmt->Ist.Put.data;
-            IRExpr *addr = NULL;
-
-            switch (data->tag) {
-            case Iex_Load:
-              addr = data->Iex.Load.addr;
-              break;
-            case Iex_Const:
-              /* TODO: Determine how global data is accessed, because continuing
-               * might not be the correct way to handle this */
-              continue;
-            case Iex_Unop:
-              addr = SE_(get_IRExpr)(data);
-              break;
-            case Iex_Get:
-              addr = data;
-              break;
-            default:
-              VG_(umsg)("Unhandled data IRExpr: ");
-              ppIRExpr(data);
-              VG_(umsg)("\n");
-              tl_assert(0);
-            }
-
-            tl_assert(addr);
-            switch (addr->tag) {
-            case Iex_RdTmp:
-            case Iex_Get:
-            case Iex_Load:
-              if (!taint_found) {
-                SE_(taint_IRExpr)(addr, i);
-              } else {
-                if (SE_(guest_reg_tainted)(stmt->Ist.Put.offset)) {
-                  SE_(remove_tainted_reg)(stmt->Ist.Put.offset);
-                  SE_(taint_IRExpr)(addr, stmt_idx);
-                }
-              }
-              continue;
-            case Iex_Const:
-              continue;
-            default:
-              /* FIXME: Handle more cases */
-              VG_(umsg)("Unhandled addr IRExpr: ");
-              ppIRExpr(addr);
-              VG_(umsg)("\n");
-              tl_assert(0);
+            if (!taint_found) {
+              SE_(taint_IRExpr)(data, stmt_idx);
+            } else if (SE_(guest_reg_tainted)(stmt->Ist.Put.offset)) {
+              SE_(remove_tainted_reg)(stmt->Ist.Put.offset);
+              SE_(taint_IRExpr)(data, stmt_idx);
             }
           }
           continue;
@@ -368,6 +333,17 @@ static void fix_address_space() {
               IRExpr *data = stmt->Ist.WrTmp.data;
               SE_(remove_tainted_temp)(stmt->Ist.WrTmp.tmp);
               SE_(taint_IRExpr)(data, stmt_idx);
+            } else if (SE_(is_IRExpr_tainted)(stmt->Ist.WrTmp.data, stmt_idx)) {
+              /* A temporary has been assigned a tainted value, so
+               * start looking for its use in the IRSB */
+              SE_(remove_IRExpr_taint)(stmt->Ist.WrTmp.data, stmt_idx);
+              SE_(taint_temp)(stmt->Ist.WrTmp.tmp);
+              VG_(printf)("\tRestarting analysis\n");
+              if (reset_count++ < 2) {
+                stmt_idx = orig_stmt_idx;
+                i = irsb->stmts_used;
+                found_faulting_addr = !in_first_block;
+              }
             }
           }
           continue;
@@ -377,6 +353,7 @@ static void fix_address_space() {
       }
 
       idx = bbIdx;
+      in_first_block = False;
     }
   }
 
@@ -388,10 +365,6 @@ static void fix_address_space() {
     SE_(ppTaintedLocation)(loc);
   }
   VG_(umsg)("\n");
-#if defined(VGA_amd64)
-  VG_(umsg)
-  ("RDI Offset: %d\n", offsetof(VexGuestAMD64State, guest_RDI));
-#endif
 }
 
 /**

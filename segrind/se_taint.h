@@ -117,6 +117,12 @@ void SE_(remove_tainted_reg)(Int offset);
 Bool SE_(temp_tainted)(IRTemp temp);
 
 /**
+ * @brief Taints the temporary variable
+ * @param temp
+ */
+void SE_(taint_temp)(IRTemp temp);
+
+/**
  * @brief Removes taint from temporary
  * @param tmp
  */

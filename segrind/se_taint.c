@@ -3,6 +3,7 @@
 //
 
 #include "se_taint.h"
+#include <libvex_ir.h>
 
 #include "libvex_ir.h"
 #include "pub_tool_guest.h"
@@ -34,42 +35,49 @@ static void adjust_tainted_location(const IRExpr *irExpr,
     tl_assert(0);
   }
 
+  VG_(printf)
+  ("\tAdjusting address %p in response to IRExpr ", (void *)loc->location.addr);
+  ppIRExpr(irExpr);
+  VG_(printf)("\n");
+
   switch (op) {
   case Iop_Add8:
     tl_assert(irExpr->Iex.Binop.arg2->tag == Iex_Const);
-    loc->location.addr += irExpr->Iex.Binop.arg2->Iex.Const.con->Ico.U8;
-    return;
+    loc->location.addr += (Int)irExpr->Iex.Binop.arg2->Iex.Const.con->Ico.U8;
+    break;
   case Iop_Add16:
     tl_assert(irExpr->Iex.Binop.arg2->tag == Iex_Const);
-    loc->location.addr += irExpr->Iex.Binop.arg2->Iex.Const.con->Ico.U16;
-    return;
+    loc->location.addr += (Int)irExpr->Iex.Binop.arg2->Iex.Const.con->Ico.U16;
+    break;
   case Iop_Add32:
     tl_assert(irExpr->Iex.Binop.arg2->tag == Iex_Const);
-    loc->location.addr += irExpr->Iex.Binop.arg2->Iex.Const.con->Ico.U32;
-    return;
+    loc->location.addr += (Int)irExpr->Iex.Binop.arg2->Iex.Const.con->Ico.U32;
+    break;
   case Iop_Add64:
     tl_assert(irExpr->Iex.Binop.arg2->tag == Iex_Const);
-    loc->location.addr += irExpr->Iex.Binop.arg2->Iex.Const.con->Ico.U64;
-    return;
+    loc->location.addr += (Int)irExpr->Iex.Binop.arg2->Iex.Const.con->Ico.U64;
+    break;
   case Iop_Sub8:
     tl_assert(irExpr->Iex.Binop.arg2->tag == Iex_Const);
-    loc->location.addr -= irExpr->Iex.Binop.arg2->Iex.Const.con->Ico.U8;
-    return;
+    loc->location.addr -= (Int)irExpr->Iex.Binop.arg2->Iex.Const.con->Ico.U8;
+    break;
   case Iop_Sub16:
     tl_assert(irExpr->Iex.Binop.arg2->tag == Iex_Const);
-    loc->location.addr -= irExpr->Iex.Binop.arg2->Iex.Const.con->Ico.U16;
-    return;
+    loc->location.addr -= (Int)irExpr->Iex.Binop.arg2->Iex.Const.con->Ico.U16;
+    break;
   case Iop_Sub32:
     tl_assert(irExpr->Iex.Binop.arg2->tag == Iex_Const);
-    loc->location.addr -= irExpr->Iex.Binop.arg2->Iex.Const.con->Ico.U32;
-    return;
+    loc->location.addr -= (Int)irExpr->Iex.Binop.arg2->Iex.Const.con->Ico.U32;
+    break;
   case Iop_Sub64:
     tl_assert(irExpr->Iex.Binop.arg2->tag == Iex_Const);
-    loc->location.addr -= irExpr->Iex.Binop.arg2->Iex.Const.con->Ico.U64;
-    return;
+    loc->location.addr -= (Int)irExpr->Iex.Binop.arg2->Iex.Const.con->Ico.U64;
+    break;
   default:
-    return;
+    break;
   }
+
+  VG_(printf)("\taddr is now %p\n", (void *)loc->location.addr);
 }
 
 /**
@@ -100,10 +108,10 @@ static SE_(tainted_loc) *
       result =
           VG_(OSetGen_AllocNode)(tainted_locations_, sizeof(SE_(tainted_loc)));
     }
-    if (irExpr->Iex.Get.offset == VG_O_STACK_PTR) {
+    if (irExpr->Iex.Get.offset == VG_O_FRAME_PTR) {
       guest_state = VG_(indexXA)(program_states_, idx);
       result->type = taint_addr;
-      result->location.addr = guest_state->VG_STACK_PTR;
+      result->location.addr = guest_state->VG_FRAME_PTR;
     } else {
       result->type = taint_reg;
       result->location.offset = irExpr->Iex.Get.offset;
@@ -121,6 +129,14 @@ static SE_(tainted_loc) *
     baseExpr = SE_(get_IRExpr)(irExpr);
     result = create_loc(baseExpr, idx, res);
     break;
+  case Iex_Const:
+    if (!result) {
+      result =
+          VG_(OSetGen_AllocNode)(tainted_locations_, sizeof(SE_(tainted_loc)));
+    }
+    result->type = taint_invalid;
+    result->location.offset = -1;
+    break;
   default:
     VG_(printf)("Invalid IRExpr: ");
     ppIRExpr(irExpr);
@@ -135,13 +151,13 @@ void SE_(ppTaintedLocation)(const SE_(tainted_loc) * loc) {
 
   switch (loc->type) {
   case taint_reg:
-    VG_(umsg)("{ reg offset: %d }\n", loc->location.offset);
+    VG_(printf)("{ reg offset: %d }\n", loc->location.offset);
     return;
   case taint_temp:
-    VG_(umsg)("{  temporary: %u }\n", loc->location.temp);
+    VG_(printf)("{ temporary: %u }\n", loc->location.temp);
     return;
   case taint_addr:
-    VG_(umsg)("{    address: %p }\n", (void *)loc->location.addr);
+    VG_(printf)("{ address: %p }\n", (void *)loc->location.addr);
     return;
   case taint_invalid:
   default:
@@ -202,11 +218,12 @@ IRExpr *SE_(get_IRExpr)(IRExpr *expr) {
 
   switch (expr->tag) {
   case Iex_RdTmp:
-  case Iex_Const:
   case Iex_Get:
-  case Iex_GetI:
-  case Iex_Load:
+  case Iex_Const:
     result = expr;
+    break;
+  case Iex_Load:
+    result = SE_(get_IRExpr)(expr->Iex.Load.addr);
     break;
   case Iex_Unop:
     result = SE_(get_IRExpr)(expr->Iex.Unop.arg);
@@ -254,57 +271,28 @@ IRExpr *SE_(get_IRExpr)(IRExpr *expr) {
 }
 
 void SE_(remove_IRExpr_taint)(IRExpr *irExpr, Word idx) {
-  irExpr = SE_(get_IRExpr)(irExpr);
   SE_(tainted_loc) loc;
   create_loc(irExpr, idx, &loc);
 
   void *tmp = VG_(OSetGen_Remove)(tainted_locations_, &loc);
   if (tmp) {
+    VG_(printf)("\tRemoving taint from ");
+    SE_(ppTaintedLocation)(&loc);
     VG_(OSetGen_FreeNode)(tainted_locations_, tmp);
   }
 }
 
 void SE_(taint_IRExpr)(IRExpr *irExpr, Word idx) {
   SE_(tainted_loc) *loc = create_loc(irExpr, idx, NULL);
-
-  switch (irExpr->tag) {
-  case Iex_Get:
-  case Iex_RdTmp:
-    if (!VG_(OSetGen_Contains)(tainted_locations_, loc)) {
-      VG_(umsg)("Tainting ");
-      SE_(ppTaintedLocation)(loc);
-      VG_(OSetGen_Insert)(tainted_locations_, loc);
-    }
-    break;
-  case Iex_Const:
+  if (loc->type == taint_invalid) {
     VG_(OSetGen_FreeNode)(tainted_locations_, loc);
-    break;
-  case Iex_Qop:
-    SE_(taint_IRExpr)(irExpr->Iex.Qop.details->arg1, idx);
-    SE_(taint_IRExpr)(irExpr->Iex.Qop.details->arg2, idx);
-    SE_(taint_IRExpr)(irExpr->Iex.Qop.details->arg3, idx);
-    SE_(taint_IRExpr)(irExpr->Iex.Qop.details->arg4, idx);
-    break;
-  case Iex_Triop:
-    SE_(taint_IRExpr)(irExpr->Iex.Triop.details->arg1, idx);
-    SE_(taint_IRExpr)(irExpr->Iex.Triop.details->arg2, idx);
-    SE_(taint_IRExpr)(irExpr->Iex.Triop.details->arg3, idx);
-    break;
-  case Iex_Binop:
-    SE_(taint_IRExpr)(irExpr->Iex.Binop.arg1, idx);
-    SE_(taint_IRExpr)(irExpr->Iex.Binop.arg2, idx);
-    break;
-  case Iex_Unop:
-    SE_(taint_IRExpr)(irExpr->Iex.Unop.arg, idx);
-    break;
-  case Iex_Load:
-    SE_(taint_IRExpr)(irExpr->Iex.Load.addr, idx);
-    break;
-  default:
-    VG_(umsg)("Unhandled taint IRExpr: ");
-    ppIRExpr(irExpr);
-    VG_(umsg)("\n");
-    tl_assert(0);
+    return;
+  }
+
+  if (!VG_(OSetGen_Contains)(tainted_locations_, loc)) {
+    VG_(printf)("\tTainting ");
+    SE_(ppTaintedLocation)(loc);
+    VG_(OSetGen_Insert)(tainted_locations_, loc);
   }
 
   return;
@@ -313,30 +301,8 @@ void SE_(taint_IRExpr)(IRExpr *irExpr, Word idx) {
 Bool SE_(is_IRExpr_tainted)(IRExpr *irExpr, Word idx) {
   SE_(tainted_loc) loc;
 
-  switch (irExpr->tag) {
-  case Iex_Get:
-  case Iex_RdTmp:
-    create_loc(irExpr, idx, &loc);
-    return VG_(OSetGen_Contains)(tainted_locations_, &loc);
-  case Iex_Qop:
-    return SE_(is_IRExpr_tainted)(irExpr->Iex.Qop.details->arg1, idx) ||
-           SE_(is_IRExpr_tainted)(irExpr->Iex.Qop.details->arg2, idx) ||
-           SE_(is_IRExpr_tainted)(irExpr->Iex.Qop.details->arg3, idx) ||
-           SE_(is_IRExpr_tainted)(irExpr->Iex.Qop.details->arg4, idx);
-  case Iex_Triop:
-    return SE_(is_IRExpr_tainted)(irExpr->Iex.Triop.details->arg1, idx) ||
-           SE_(is_IRExpr_tainted)(irExpr->Iex.Triop.details->arg2, idx) ||
-           SE_(is_IRExpr_tainted)(irExpr->Iex.Triop.details->arg3, idx);
-  case Iex_Binop:
-    return SE_(is_IRExpr_tainted)(irExpr->Iex.Binop.arg1, idx) ||
-           SE_(is_IRExpr_tainted)(irExpr->Iex.Binop.arg2, idx);
-  case Iex_Unop:
-    return SE_(is_IRExpr_tainted)(irExpr->Iex.Unop.arg, idx);
-  case Iex_Load:
-    return SE_(is_IRExpr_tainted)(irExpr->Iex.Load.addr, idx);
-  default:
-    return False;
-  }
+  create_loc(irExpr, idx, &loc);
+  return VG_(OSetGen_Contains)(tainted_locations_, &loc);
 }
 
 OSet *SE_(get_tainted_locations)() {
@@ -364,7 +330,7 @@ void SE_(remove_tainted_reg)(Int offset) {
   loc.type = taint_reg;
   loc.location.offset = offset;
 
-  VG_(umsg)("Removing taint from guest offset %d\n", offset);
+  VG_(printf)("\tRemoving taint from guest offset %d\n", offset);
 
   void *tmp = VG_(OSetGen_Remove)(tainted_locations_, &loc);
   if (tmp) {
@@ -380,12 +346,27 @@ Bool SE_(temp_tainted)(IRTemp temp) {
   return VG_(OSetGen_Contains)(tainted_locations_, &loc);
 }
 
+void SE_(taint_temp)(IRTemp temp) {
+  SE_(tainted_loc) *loc =
+      VG_(OSetGen_AllocNode)(tainted_locations_, sizeof(SE_(tainted_loc)));
+  loc->type = taint_temp;
+  loc->location.temp = temp;
+
+  if (!VG_(OSetGen_Contains)(tainted_locations_, loc)) {
+    VG_(printf)("\tTainting ");
+    SE_(ppTaintedLocation)(loc);
+    VG_(OSetGen_Insert)(tainted_locations_, loc);
+  } else {
+    VG_(OSetGen_FreeNode)(tainted_locations_, loc);
+  }
+}
+
 void SE_(remove_tainted_temp)(IRTemp temp) {
   SE_(tainted_loc) loc;
   loc.type = taint_temp;
   loc.location.offset = temp;
 
-  VG_(umsg)("Removing taint from temporary %u\n", temp);
+  VG_(printf)("\tRemoving taint from temporary %u\n", temp);
 
   void *tmp = VG_(OSetGen_Remove)(tainted_locations_, &loc);
   if (tmp) {
