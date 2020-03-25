@@ -230,7 +230,6 @@ static void fix_address_space() {
 
   Bool found_faulting_addr = False;
   Bool in_first_block = True;
-  Int reset_count = 0;
 
   Word stmt_idx = VG_(sizeXA)(program_states);
   for (idx = VG_(sizeXA)(program_states) - 1; idx >= 0; idx--) {
@@ -339,11 +338,9 @@ static void fix_address_space() {
               SE_(remove_IRExpr_taint)(stmt->Ist.WrTmp.data, stmt_idx);
               SE_(taint_temp)(stmt->Ist.WrTmp.tmp);
               VG_(printf)("\tRestarting analysis\n");
-              if (reset_count++ < 2) {
                 stmt_idx = orig_stmt_idx;
                 i = irsb->stmts_used;
                 found_faulting_addr = !in_first_block;
-              }
             }
           }
           continue;
@@ -358,13 +355,7 @@ static void fix_address_space() {
   }
 
   OSet *tainted_locations = SE_(get_tainted_locations)();
-
-  SE_(tainted_loc) * loc;
-  VG_(umsg)("Tainted offsets: ");
-  while ((loc = VG_(OSetGen_Next)(tainted_locations))) {
-    SE_(ppTaintedLocation)(loc);
-  }
-  VG_(umsg)("\n");
+  tl_assert(VG_(OSetGen_Size)(tainted_locations) > 0);
 }
 
 /**
