@@ -83,6 +83,7 @@ static RangeMap *irsb_ranges = NULL;
 static HChar *target_name = NULL;
 
 static void SE_(report_failure_to_commander)(void);
+static void fix_address_space(void);
 
 /**
  * @brief Writes SEMSG_OK msg with io_vec to the commander process
@@ -117,12 +118,6 @@ static void SE_(send_fuzzed_io_vec)(void) {
   VG_(get_shadow_regs_area)
   (target_id, (UChar *)&SE_(current_io_vec)->expected_state, 0, 0,
    sizeof(SE_(current_io_vec)->expected_state));
-
-#if defined(VGA_amd64)
-  VG_(umsg)
-  ("%s returned 0x%llx\n", target_name,
-   SE_(current_io_vec)->expected_state.guest_RAX);
-#endif
 
   tl_assert(SE_(write_io_vec_to_cmd_server)(SE_(current_io_vec), True) > 0);
 }
@@ -249,13 +244,15 @@ static void fix_address_space() {
       ("Could not find IRSB bounds at 0x%lx (%s)!\n", inst_addr, func_name);
       SE_(report_failure_to_commander)();
     }
-    VG_(umsg)
-    ("Found IRSB range [0x%lx - 0x%lx] for instruction 0x%lx\n", irsb_start,
-     irsb_end, inst_addr);
+    //    VG_(umsg)
+    //    ("Found IRSB range [0x%lx - 0x%lx] for instruction 0x%lx\n",
+    //    irsb_start,
+    //     irsb_end, inst_addr);
 
     if (!irsb || irsb_start != get_IRSB_start(irsb)) {
-      VG_(umsg)
-      ("Creating new IRSB for range [0x%lx - 0x%lx]\n", irsb_start, irsb_end);
+      //      VG_(umsg)
+      //      ("Creating new IRSB for range [0x%lx - 0x%lx]\n", irsb_start,
+      //      irsb_end);
       vexSetAllocModeTEMP_and_clear();
       Long offset = 0;
       irsb = emptyIRSB();
@@ -273,9 +270,9 @@ static void fix_address_space() {
       /* Recreate executed block */
       for (Word tmpIdx = bbIdx + 1; tmpIdx <= idx; tmpIdx++) {
         VexGuestArchState *tmpState = VG_(indexXA)(program_states, tmpIdx);
-        VG_(umsg)
-        ("Translating Instruction %ld (max %ld) (%p)\n", tmpIdx, idx,
-         (void *)tmpState->VG_INSTR_PTR);
+        //        VG_(umsg)
+        //        ("Translating Instruction %ld (max %ld) (%p)\n", tmpIdx, idx,
+        //         (void *)tmpState->VG_INSTR_PTR);
         offset = (tmpState->VG_INSTR_PTR - irsb_start);
         SE_DISASM_TO_IR(irsb, (const UChar *)irsb_start, offset,
                         tmpState->VG_INSTR_PTR, guest_arch, &guest_arch_info,
@@ -288,14 +285,15 @@ static void fix_address_space() {
       Word orig_stmt_idx = stmt_idx;
       for (Int i = irsb->stmts_used - 1; i >= 0; i--) {
         IRStmt *stmt = irsb->stmts[i];
-        ppIRStmt(stmt);
-        VG_(printf)("\n");
+        //        ppIRStmt(stmt);
+        //        VG_(printf)("\n");
         Bool taint_found = SE_(taint_found)();
         switch (stmt->tag) {
         case Ist_IMark:
           stmt_idx--;
           if (!found_faulting_addr && stmt->Ist.IMark.addr == faulting_addr) {
-            VG_(printf)("\tFound faulting address %p\n", (void *)faulting_addr);
+            //            VG_(printf)("\tFound faulting address %p\n", (void
+            //            *)faulting_addr);
             found_faulting_addr = True;
           }
           continue;
@@ -336,7 +334,7 @@ static void fix_address_space() {
                * start looking for its use in the IRSB */
               SE_(remove_IRExpr_taint)(stmt->Ist.WrTmp.data, stmt_idx);
               SE_(taint_temp)(stmt->Ist.WrTmp.tmp);
-              VG_(printf)("\tRestarting analysis\n");
+              //              VG_(printf)("\tRestarting analysis\n");
               stmt_idx = orig_stmt_idx;
               i = irsb->stmts_used;
               found_faulting_addr = !in_first_block;
@@ -490,14 +488,8 @@ static void jump_to_target_function(void) {
   VG_(get_shadow_regs_area)
   (target_id, (UChar *)&current_state, 0, 0, sizeof(current_state));
 
-#if defined(VGA_amd64)
-  VG_(umsg)
-  ("About to execute 0x%lx with RDI = 0x%llx\n", VG_(get_IP)(target_id),
-   SE_(current_io_vec)->initial_state.guest_RDI);
-  current_state.guest_RDI = SE_(current_io_vec)->initial_state.guest_RDI;
-#endif
   VG_(set_shadow_regs_area)
-  (target_id, 0, 0, sizeof(SE_(current_io_vec)->expected_state),
+  (target_id, 0, 0, sizeof(SE_(current_io_vec)->expected_state.register_state),
    (UChar *)&current_state);
   target_called = True;
 }
@@ -548,9 +540,6 @@ static IRSB *SE_(instrument_target)(IRSB *bb) {
   IRDirty *di;
   UWord minAddress = 0;
   UWord maxAddress = 0;
-
-  ppIRSB(bb);
-  VG_(umsg)("\n");
 
   bbOut = deepCopyIRSBExceptStmts(bb);
 

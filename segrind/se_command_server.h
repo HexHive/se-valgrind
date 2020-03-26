@@ -51,6 +51,9 @@ typedef struct {
   Bool using_existing_io_vec;
   ThreadId executor_tid;
   UInt attempt_count;
+  Addr initial_stack_ptr;
+  Addr current_stack_ptr;
+  RangeMap *register_map;
 } SE_(cmd_server);
 
 /**

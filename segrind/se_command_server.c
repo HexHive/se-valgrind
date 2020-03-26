@@ -3,6 +3,7 @@
 //
 
 #include "se_command_server.h"
+#include "se_taint.h"
 
 #include "pub_tool_guest.h"
 #include "pub_tool_libcproc.h"
@@ -142,6 +143,12 @@ static Bool handle_set_target_cmd(SE_(cmd_msg) * msg,
   return False;
 }
 
+static void fuzz_region(UInt *seed, Addr start, Addr end) {
+  /* TODO: Implement a better fuzzing strategy */
+  VG_(umsg)("Fuzzing [%p - %p]\n", (void *)start, (void *)end);
+  VG_(memset)((void *)start, VG_(random)(seed), end - start);
+}
+
 /**
  * @brief Fuzzes and sets the guest program state
  * @param server
@@ -154,23 +161,51 @@ static Bool fuzz_program_state(SE_(cmd_server) * server) {
     return False;
   }
 
-  if (SE_(current_io_vec)) {
-    SE_(free_io_vec)(SE_(current_io_vec));
+  if (!SE_(current_io_vec)) {
+    SE_(current_io_vec) = SE_(create_io_vec)();
+    VG_(get_shadow_regs_area)
+    (server->executor_tid,
+     (UChar *)&SE_(current_io_vec)->initial_state.register_state, 0, 0,
+     sizeof(SE_(current_io_vec)->initial_state.register_state));
+    server->initial_stack_ptr =
+        SE_(current_io_vec)->initial_state.register_state.VG_STACK_PTR;
+    server->current_stack_ptr = server->initial_stack_ptr;
   }
 
-  SE_(current_io_vec) = SE_(create_io_vec)();
+  SE_(current_io_vec)->random_seed = SE_(seed);
 
-  VG_(get_shadow_regs_area)
-  (server->executor_tid, (UChar *)&SE_(current_io_vec)->initial_state, 0, 0,
-   sizeof(SE_(current_io_vec)->initial_state));
-#if defined(VGA_amd64)
-  VG_(umsg)
-  ("Initial RDI = 0x%llx\n", SE_(current_io_vec)->initial_state.guest_RDI);
-  SE_(current_io_vec)->initial_state.guest_RDI = VG_(random)(&SE_(seed));
-  VG_(umsg)
-  ("Setting RDI = 0x%llx\n", SE_(current_io_vec)->initial_state.guest_RDI);
-  SE_(current_io_vec)->initial_state.guest_RAX = 0;
-#endif
+  //#if defined(VGA_amd64)
+  //  VG_(umsg)
+  //  ("Initial RDI = 0x%llx\n", SE_(current_io_vec)->initial_state.guest_RDI);
+  //  SE_(current_io_vec)->initial_state.guest_RDI = VG_(random)(&SE_(seed));
+  //  VG_(umsg)
+  //  ("Setting RDI = 0x%llx\n", SE_(current_io_vec)->initial_state.guest_RDI);
+  //  SE_(current_io_vec)->initial_state.guest_RAX = 0;
+  //#endif
+  UInt size =
+      VG_(sizeRangeMap)(SE_(current_io_vec)->initial_state.address_state);
+  Bool in_obj = False;
+  for (Word i = 0; i < size; i++) {
+    UWord key_min, key_max, val;
+    VG_(indexRangeMap)
+    (&key_min, &key_max, &val, SE_(current_io_vec)->initial_state.address_state,
+     i);
+
+    if (val == OBJ_START_MAGIC) {
+      in_obj = True;
+      continue;
+    } else if (val == OBJ_END_MAGIC) {
+      in_obj = False;
+      continue;
+    }
+
+    if (in_obj) {
+      fuzz_region(&SE_(seed), key_min, key_max);
+    }
+  }
+
+  SE_(current_io_vec)->initial_state.register_state.VG_STACK_PTR =
+      server->current_stack_ptr;
 
   return SE_(set_server_state)(server, SERVER_WAITING_TO_EXECUTE);
 }
@@ -248,8 +283,43 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
   tl_assert(new_alloc_msg);
   tl_assert(new_alloc_msg->msg_type == SEMSG_NEW_ALLOC);
   tl_assert(server->using_fuzzed_io_vec);
+  tl_assert(new_alloc_msg->data);
 
-  // TODO: Implement fetching of new alloc
+  SE_(tainted_loc) tainted_loc;
+  Word count;
+  VG_(memcpy)(&count, new_alloc_msg->data, sizeof(Word));
+  Word bytes_read = sizeof(Word);
+  for (Word i = 0; i < count; i++) {
+    VG_(memcpy)
+    (&tainted_loc, (UChar *)new_alloc_msg->data + bytes_read - 1,
+     sizeof(tainted_loc));
+    bytes_read += sizeof(tainted_loc);
+
+    Addr new_alloc_loc;
+    switch (tainted_loc.type) {
+    case taint_reg:
+      /* A new object needs to be allocated on the stack */
+      new_alloc_loc = server->current_stack_ptr;
+      server->current_stack_ptr -= SE_DEFAULT_ALLOC_SPACE + 4;
+      VG_(bindRangeMap)
+      (SE_(current_io_vec)->initial_state.address_state, new_alloc_loc,
+       new_alloc_loc + 1, OBJ_START_MAGIC);
+      VG_(bindRangeMap)
+      (SE_(current_io_vec)->initial_state.address_state,
+       new_alloc_loc + SE_DEFAULT_ALLOC_SPACE + 2,
+       new_alloc_loc + SE_DEFAULT_ALLOC_SPACE + 3, VG_(random)(&SE_(seed)));
+      VG_(memcpy)
+      ((UChar *)(&SE_(current_io_vec)->initial_state.register_state) +
+           tainted_loc.location.offset,
+       (UChar *)new_alloc_loc + 1, sizeof(new_alloc_loc));
+      break;
+    default:
+      /* TODO: Handle address misses */
+      VG_(umsg)("Could not handle tainted location type:\n\t");
+      SE_(ppTaintedLocation)(&tainted_loc);
+      return False;
+    }
+  }
 
   SE_(set_server_state)(server, SERVER_WAIT_FOR_CMD);
   fuzz_program_state(server);
@@ -345,6 +415,8 @@ SE_(cmd_server) * SE_(make_server)(Int commander_r_fd, Int commander_w_fd) {
   cmd_server->commander_r_fd = commander_r_fd;
   cmd_server->commander_w_fd = commander_w_fd;
   cmd_server->current_state = SERVER_WAIT_FOR_START;
+  cmd_server->initial_stack_ptr = -1;
+  cmd_server->current_stack_ptr = -1;
 
   return cmd_server;
 }

@@ -11,6 +11,8 @@
 #include "pub_tool_oset.h"
 #include "pub_tool_xarray.h"
 
+#define SE_DEFAULT_ALLOC_SPACE sizeof(Addr)
+
 typedef enum {
   taint_invalid = -1,
   taint_addr, /* A guest memory location */

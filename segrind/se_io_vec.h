@@ -8,20 +8,31 @@
 #include "libvex.h"
 #include "pub_tool_guest.h"
 #include "pub_tool_oset.h"
+#include "pub_tool_rangemap.h"
 #include "se.h"
 #include "se_command.h"
+#include "se_taint.h"
 
 const HChar *SE_IOVEC_MALLOC_TYPE;
+
+#define ALLOCATED_SUBPTR_MAGIC 0xA110CA7E
+#define OBJ_START_MAGIC 0xA110CA57
+#define OBJ_END_MAGIC 0xA110CAED
+
+typedef struct se_program_state_ {
+  VexGuestArchState register_state;
+  RangeMap *address_state;
+} SE_(program_state);
 
 typedef struct io_vec {
   VexArch host_arch;
   VexEndness host_endness;
+  UInt random_seed;
 
-  VexGuestArchState initial_state;
-  VexGuestArchState expected_state;
+  SE_(program_state) initial_state;
+  SE_(program_state) expected_state;
 
   OSet *system_calls;
-  OSet *
 } SE_(io_vec);
 
 /**
