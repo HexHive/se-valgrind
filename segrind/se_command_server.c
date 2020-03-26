@@ -188,7 +188,7 @@ static Bool fuzz_program_state(SE_(cmd_server) * server) {
       continue;
     }
 
-    if (in_obj) {
+    if (in_obj && val != ALLOCATED_SUBPTR_MAGIC) {
       fuzz_region(&SE_(seed), key_min, key_max);
     }
   }
@@ -296,24 +296,33 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
     case taint_reg:
       /* A new object needs to be allocated on the stack */
       new_alloc_loc = server->current_stack_ptr;
-      server->current_stack_ptr -= SE_DEFAULT_ALLOC_SPACE + 4;
+      server->current_stack_ptr -= SE_DEFAULT_ALLOC_SPACE + 2;
 
-      VG_(printf)("Allocating new object at %p\n", (void *)new_alloc_loc);
+      VG_(printf)
+      ("Allocating %ld bytes at %p\n", SE_DEFAULT_ALLOC_SPACE + 2,
+       (void *)new_alloc_loc);
 
+      /* Mark the start and end points of the object */
       VG_(bindRangeMap)
       (SE_(current_io_vec)->initial_state.address_state, new_alloc_loc,
-       new_alloc_loc + 1, OBJ_START_MAGIC);
+       new_alloc_loc, OBJ_START_MAGIC);
+      VG_(bindRangeMap)
+      (SE_(current_io_vec)->initial_state.address_state, new_alloc_loc + 1,
+       new_alloc_loc + 1 + SE_DEFAULT_ALLOC_SPACE, 1);
       VG_(bindRangeMap)
       (SE_(current_io_vec)->initial_state.address_state,
-       new_alloc_loc + SE_DEFAULT_ALLOC_SPACE + 2,
-       new_alloc_loc + SE_DEFAULT_ALLOC_SPACE + 3, VG_(random)(&SE_(seed)));
+       new_alloc_loc + 2 + SE_DEFAULT_ALLOC_SPACE,
+       new_alloc_loc + 2 + SE_DEFAULT_ALLOC_SPACE, OBJ_END_MAGIC);
       VG_(printf)
       ("Setting register %d to %p\n", tainted_loc.location.offset,
        (void *)(new_alloc_loc + 1));
-      VG_(memcpy)
-      ((UChar *)(&SE_(current_io_vec)->initial_state.register_state) +
-           tainted_loc.location.offset,
-       (UChar *)new_alloc_loc + 1, sizeof(new_alloc_loc));
+      *(Addr *)(((UChar *)(&SE_(current_io_vec)->initial_state.register_state) +
+                 tainted_loc.location.offset)) = new_alloc_loc + 1;
+#if defined(VGA_amd64)
+      VG_(umsg)
+      ("RDI = 0x%llx\n",
+       SE_(current_io_vec)->initial_state.register_state.guest_RDI);
+#endif
       break;
     default:
       /* TODO: Handle address misses */
@@ -380,6 +389,7 @@ static Bool wait_for_child(SE_(cmd_server) * server) {
         should_fork = handle_new_alloc(server, cmd_msg);
         /* cmd_msg is freed in handle_new_alloc */
       } else if (server->current_state == SERVER_GETTING_INIT_STATE) {
+        server->attempt_count--;
         if (cmd_msg->msg_type != SEMSG_OK) {
           write_to_commander(server, cmd_msg, True);
           goto cleanup;
@@ -461,6 +471,9 @@ static Bool SE_(fork_and_execute)(SE_(cmd_server) * server) {
   while (server->attempt_count <= SE_(MaxAttempts)) {
     if (server->current_state != SERVER_GETTING_INIT_STATE)
       if (!SE_(set_server_state)(server, SERVER_EXECUTING)) {
+        VG_(umsg)
+        ("Invalid server transition: %s -> SERVER_EXECUTING\n",
+         SE_(server_state_str)(server->current_state));
         report_error(server, "Invalid server state");
         goto exit;
       }

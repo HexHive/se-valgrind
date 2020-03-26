@@ -489,11 +489,11 @@ static void jump_to_target_function(void) {
     return;
   }
 
-  VexGuestArchState current_state;
-  VG_(get_shadow_regs_area)
-  (target_id, (UChar *)&current_state, 0, 0, sizeof(current_state));
-
   if (SE_(command_server)->current_state == SERVER_GETTING_INIT_STATE) {
+    VexGuestArchState current_state;
+    VG_(get_shadow_regs_area)
+    (target_id, (UChar *)&current_state, 0, 0, sizeof(current_state));
+
     VG_(umsg)
     ("Reporting initial state. SP = %p\n", (void *)current_state.VG_STACK_PTR);
     SE_(cmd_msg) *cmd_msg =
@@ -509,6 +509,12 @@ static void jump_to_target_function(void) {
   (target_id, 0, 0, sizeof(SE_(current_io_vec)->initial_state.register_state),
    (UChar *)&SE_(current_io_vec)->initial_state.register_state);
   target_called = True;
+
+#if defined(VGA_amd64)
+  VG_(umsg)
+  ("About to execute 0x%lx with RDI = 0x%llx\n", VG_(get_IP)(target_id),
+   SE_(current_io_vec)->initial_state.register_state.guest_RDI);
+#endif
 }
 
 /**
