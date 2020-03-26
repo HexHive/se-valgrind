@@ -38,6 +38,7 @@ typedef enum se_server_state {
   SERVER_REPORT_ERROR,       /* Server reported an error */
   SERVER_SETTING_CTX,        /* Server is establishing input program state */
   SERVER_WAITING_TO_EXECUTE, /* Server is ready to execute target function */
+  SERVER_GETTING_INIT_STATE, /* The server is gathering the initial state */
 } SE_(cmd_server_state);
 
 typedef struct {

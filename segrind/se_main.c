@@ -116,8 +116,8 @@ static void SE_(send_fuzzed_io_vec)(void) {
     VG_(OSetWord_Insert)(SE_(current_io_vec)->system_calls, syscall_num);
   }
   VG_(get_shadow_regs_area)
-  (target_id, (UChar *)&SE_(current_io_vec)->expected_state, 0, 0,
-   sizeof(SE_(current_io_vec)->expected_state));
+  (target_id, (UChar *)&SE_(current_io_vec)->expected_state.register_state, 0,
+   0, sizeof(SE_(current_io_vec)->expected_state.register_state));
 
   tl_assert(SE_(write_io_vec_to_cmd_server)(SE_(current_io_vec), True) > 0);
 }
@@ -178,6 +178,11 @@ static void SE_(post_clo_init)(void) {
   tl_assert(SE_(command_server));
 }
 
+/**
+ * @brief Returns the first instruction address of the IRSB
+ * @param irsb
+ * @return
+ */
 static Addr get_IRSB_start(IRSB *irsb) {
   tl_assert(irsb);
   for (Int i = 0; i < irsb->stmts_used; i++) {
@@ -403,7 +408,8 @@ static void SE_(thread_creation)(ThreadId tid, ThreadId child) {
     VG_(umsg)("Starting Command Server\n");
     SE_(start_server)(SE_(command_server), child);
 
-    if (SE_(command_server)->current_state != SERVER_EXECUTING) {
+    if (SE_(command_server)->current_state != SERVER_EXECUTING &&
+        SE_(command_server)->current_state != SERVER_GETTING_INIT_STATE) {
       VG_(exit)(0);
     }
 
@@ -449,7 +455,8 @@ static void SE_(report_success_to_commader)(void) {
   tl_assert(client_running);
   tl_assert(main_replaced);
 
-  if (SE_(command_server)->using_fuzzed_io_vec) {
+  if (SE_(command_server)->using_fuzzed_io_vec &&
+      SE_(command_server)->current_state != SERVER_GETTING_INIT_STATE) {
     SE_(send_fuzzed_io_vec)();
   }
 
@@ -482,15 +489,25 @@ static void jump_to_target_function(void) {
     return;
   }
 
-  VG_(umsg)("Setting program state\n");
-
   VexGuestArchState current_state;
   VG_(get_shadow_regs_area)
   (target_id, (UChar *)&current_state, 0, 0, sizeof(current_state));
 
+  if (SE_(command_server)->current_state == SERVER_GETTING_INIT_STATE) {
+    VG_(umsg)
+    ("Reporting initial state. SP = %p\n", (void *)current_state.VG_STACK_PTR);
+    SE_(cmd_msg) *cmd_msg =
+        SE_(create_cmd_msg)(SEMSG_OK, sizeof(current_state), &current_state);
+    SE_(write_msg_to_fd)(SE_(command_server)->executor_pipe[1], cmd_msg, True);
+    SE_(cleanup_and_exit)();
+  }
+
+  VG_(umsg)
+  ("Setting program state. SP = %p\n",
+   (void *)SE_(current_io_vec)->initial_state.register_state.VG_STACK_PTR);
   VG_(set_shadow_regs_area)
-  (target_id, 0, 0, sizeof(SE_(current_io_vec)->expected_state.register_state),
-   (UChar *)&current_state);
+  (target_id, 0, 0, sizeof(SE_(current_io_vec)->initial_state.register_state),
+   (UChar *)&SE_(current_io_vec)->initial_state.register_state);
   target_called = True;
 }
 

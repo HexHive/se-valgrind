@@ -132,7 +132,7 @@ static Bool handle_set_target_cmd(SE_(cmd_msg) * msg,
   VG_(umsg)("Looking for function %s\n", func_name);
   if (VG_(lookup_symbol_SLOW)(VG_(current_DiEpoch()), "*", func_name,
                               &symAvma)) {
-    if (SE_(set_server_state)(server, SERVER_WAIT_FOR_CMD)) {
+    if (SE_(set_server_state)(server, SERVER_GETTING_INIT_STATE)) {
       VG_(umsg)("Found %s at 0x%lx\n", func_name, symAvma.main);
       server->target_func_addr = symAvma.main;
       return True;
@@ -159,17 +159,6 @@ static Bool fuzz_program_state(SE_(cmd_server) * server) {
 
   if (!SE_(set_server_state)(server, SERVER_FUZZING)) {
     return False;
-  }
-
-  if (!SE_(current_io_vec)) {
-    SE_(current_io_vec) = SE_(create_io_vec)();
-    VG_(get_shadow_regs_area)
-    (server->executor_tid,
-     (UChar *)&SE_(current_io_vec)->initial_state.register_state, 0, 0,
-     sizeof(SE_(current_io_vec)->initial_state.register_state));
-    server->initial_stack_ptr =
-        SE_(current_io_vec)->initial_state.register_state.VG_STACK_PTR;
-    server->current_stack_ptr = server->initial_stack_ptr;
   }
 
   SE_(current_io_vec)->random_seed = SE_(seed);
@@ -204,6 +193,8 @@ static Bool fuzz_program_state(SE_(cmd_server) * server) {
     }
   }
 
+  SE_(current_io_vec)->initial_state.register_state.VG_FRAME_PTR =
+      server->current_stack_ptr;
   SE_(current_io_vec)->initial_state.register_state.VG_STACK_PTR =
       server->current_stack_ptr;
 
@@ -229,7 +220,9 @@ static Bool handle_command(SE_(cmd_server) * server) {
   case SEMSG_SET_TGT:
     msg_handled = handle_set_target_cmd(cmd_msg, server);
     if (msg_handled) {
-      report_success(server, 0, NULL);
+      //      report_success(server, 0, NULL);
+      /* Get the initial starting state for the server */
+      parent_should_fork = True;
     }
     break;
   case SEMSG_EXIT:
@@ -291,9 +284,12 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
   Word bytes_read = sizeof(Word);
   for (Word i = 0; i < count; i++) {
     VG_(memcpy)
-    (&tainted_loc, (UChar *)new_alloc_msg->data + bytes_read - 1,
+    (&tainted_loc, (UChar *)new_alloc_msg->data + bytes_read,
      sizeof(tainted_loc));
     bytes_read += sizeof(tainted_loc);
+
+    VG_(printf)("Received ");
+    SE_(ppTaintedLocation)(&tainted_loc);
 
     Addr new_alloc_loc;
     switch (tainted_loc.type) {
@@ -301,6 +297,9 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
       /* A new object needs to be allocated on the stack */
       new_alloc_loc = server->current_stack_ptr;
       server->current_stack_ptr -= SE_DEFAULT_ALLOC_SPACE + 4;
+
+      VG_(printf)("Allocating new object at %p\n", (void *)new_alloc_loc);
+
       VG_(bindRangeMap)
       (SE_(current_io_vec)->initial_state.address_state, new_alloc_loc,
        new_alloc_loc + 1, OBJ_START_MAGIC);
@@ -308,6 +307,9 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
       (SE_(current_io_vec)->initial_state.address_state,
        new_alloc_loc + SE_DEFAULT_ALLOC_SPACE + 2,
        new_alloc_loc + SE_DEFAULT_ALLOC_SPACE + 3, VG_(random)(&SE_(seed)));
+      VG_(printf)
+      ("Setting register %d to %p\n", tainted_loc.location.offset,
+       (void *)(new_alloc_loc + 1));
       VG_(memcpy)
       ((UChar *)(&SE_(current_io_vec)->initial_state.register_state) +
            tainted_loc.location.offset,
@@ -337,7 +339,8 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
 static Bool wait_for_child(SE_(cmd_server) * server) {
   tl_assert(server);
   tl_assert(server->running_pid > 0);
-  tl_assert(server->current_state == SERVER_EXECUTING);
+  tl_assert(server->current_state == SERVER_EXECUTING ||
+            server->current_state == SERVER_GETTING_INIT_STATE);
 
   Int status;
   Int wait_result;
@@ -375,6 +378,32 @@ static Bool wait_for_child(SE_(cmd_server) * server) {
       ("Got %s message from executor\n", SE_(msg_type_str)(cmd_msg->msg_type));
       if (server->using_fuzzed_io_vec && cmd_msg->msg_type == SEMSG_NEW_ALLOC) {
         should_fork = handle_new_alloc(server, cmd_msg);
+        /* cmd_msg is freed in handle_new_alloc */
+      } else if (server->current_state == SERVER_GETTING_INIT_STATE) {
+        if (cmd_msg->msg_type != SEMSG_OK) {
+          write_to_commander(server, cmd_msg, True);
+          goto cleanup;
+        } else if (cmd_msg->data == NULL ||
+                   cmd_msg->length !=
+                       sizeof(
+                           SE_(current_io_vec)->initial_state.register_state)) {
+          report_error(server, NULL);
+          goto cleanup;
+        }
+
+        if (SE_(current_io_vec)) {
+          SE_(free_io_vec)(SE_(current_io_vec));
+        }
+        SE_(current_io_vec) = SE_(create_io_vec)();
+        VG_(memcpy)
+        ((UChar *)&SE_(current_io_vec)->initial_state.register_state,
+         cmd_msg->data, cmd_msg->length);
+        SE_(free_msg)(cmd_msg);
+        server->initial_stack_ptr =
+            SE_(current_io_vec)->initial_state.register_state.VG_STACK_PTR;
+        server->current_stack_ptr = server->initial_stack_ptr;
+        VG_(umsg)
+        ("Got initial state FP = %p\n", (void *)server->initial_stack_ptr);
       } else {
         write_to_commander(server, cmd_msg, True);
       }
@@ -382,11 +411,11 @@ static Bool wait_for_child(SE_(cmd_server) * server) {
     goto cleanup;
   } else if ((fds[0].revents & VKI_POLLHUP) == VKI_POLLHUP) {
     VG_(umsg)("Executor Hung up\n");
+    report_error(server, NULL);
   }
-  report_error(server, NULL);
 
 cleanup:
-  VG_(umsg)("Cleaning up\n");
+  //  VG_(umsg)("Cleaning up\n");
   wait_result = VG_(waitpid)(server->running_pid, &status, VKI_WNOHANG);
   if (wait_result < 0 || (!WIFEXITED(status) && !WIFSIGNALED(status))) {
     VG_(kill)(server->running_pid, VKI_SIGKILL);
@@ -430,10 +459,11 @@ static Bool SE_(fork_and_execute)(SE_(cmd_server) * server) {
   Int pid;
 
   while (server->attempt_count <= SE_(MaxAttempts)) {
-    if (!SE_(set_server_state)(server, SERVER_EXECUTING)) {
-      report_error(server, "Invalid server state");
-      goto exit;
-    }
+    if (server->current_state != SERVER_GETTING_INIT_STATE)
+      if (!SE_(set_server_state)(server, SERVER_EXECUTING)) {
+        report_error(server, "Invalid server state");
+        goto exit;
+      }
     VG_(umsg)
     ("Server forking %u with status %s\n", server->attempt_count,
      SE_(server_state_str)(server->current_state));
@@ -558,6 +588,8 @@ Bool SE_(is_valid_transition)(const SE_(cmd_server) * server,
   case SERVER_START:
     return (next_state == SERVER_WAIT_FOR_TARGET);
   case SERVER_WAIT_FOR_TARGET:
+    return (next_state == SERVER_GETTING_INIT_STATE);
+  case SERVER_GETTING_INIT_STATE:
     return (next_state == SERVER_WAIT_FOR_CMD);
   case SERVER_WAIT_FOR_CMD:
     return (next_state == SERVER_FUZZING || next_state == SERVER_SETTING_CTX);
@@ -651,6 +683,8 @@ const HChar *SE_(server_state_str)(SE_(cmd_server_state) state) {
     return "SERVER_SETTING_CTX";
   case SERVER_WAITING_TO_EXECUTE:
     return "SERVER_WAITING_TO_EXECUTE";
+  case SERVER_GETTING_INIT_STATE:
+    return "SERVER_GETTING_INIT_STATE";
   default:
     VG_(umsg)("Unknown state: %u\n", state);
     return "UNKNOWN_STATE";
