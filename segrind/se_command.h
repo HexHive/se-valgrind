@@ -20,17 +20,18 @@ typedef enum se_message_type_t_ {
   SEMSG_OK,               /* Request succeeded */
   SEMSG_ACK,              /* Request receieved */
   SEMSG_SET_TGT,          /* Change target function */
-  SEMSG_EXIT,             /* Shutdown */
-  SEMSG_FUZZ,             /* Fuzz program state */
-  SEMSG_EXECUTE,          /* Execute target function */
-  SEMSG_SET_CTX,          /* Set program state for executing target function */
-  SEMSG_READY,            /* Ready to accept and execute requests */
-  SEMSG_RESET,            /* Bring to initial state */
-  SEMSG_SET_SO_TGT,       /* Set target function in shared library */
-  SEMSG_NEW_ALLOC,        /* A new allocated area is returned when fuzzing */
-  SEMSG_FAILED_CTX,       /* The provided IOVec failed */
-  SEMSG_TOO_MANY_INS,     /* The function executed too many instructions */
-  SEMSG_TOO_MANY_ATTEMPTS /* Could not execute target function */
+  SEMSG_EXIT,              /* Shutdown */
+  SEMSG_FUZZ,              /* Fuzz program state */
+  SEMSG_EXECUTE,           /* Execute target function */
+  SEMSG_SET_CTX,           /* Set program state for executing target function */
+  SEMSG_READY,             /* Ready to accept and execute requests */
+  SEMSG_RESET,             /* Bring to initial state */
+  SEMSG_SET_SO_TGT,        /* Set target function in shared library */
+  SEMSG_NEW_ALLOC,         /* A new allocated area is returned when fuzzing */
+  SEMSG_FAILED_CTX,        /* The provided IOVec failed */
+  SEMSG_TOO_MANY_INS,      /* The function executed too many instructions */
+  SEMSG_TOO_MANY_ATTEMPTS, /* Could not execute target function */
+  SEMSG_COVERAGE           /* Coverage information */
 } SE_(cmd_msg_t);
 
 /**

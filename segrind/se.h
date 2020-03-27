@@ -19,6 +19,7 @@
 #include "pub_tool_libcfile.h"
 #include "pub_tool_libcprint.h"
 #include "pub_tool_machine.h"
+#include "pub_tool_oset.h"
 #include "pub_tool_threadstate.h"
 #include "pub_tool_tooliface.h"
 #include "pub_tool_vki.h"
@@ -42,5 +43,16 @@ Bool SE_(process_cmd_line_option)(const HChar *argv);
 void SE_(print_usage)(void);
 void SE_(print_debug_usage)(void);
 void SE_(set_clo_defaults)(void);
+
+/*****************************************************
+ * Utilities
+ *****************************************************/
+/**
+ * @brief Copies an OSetWord size and data into allocated memory buffer
+ * @param oset
+ * @param dest - Where to write the location of the allocated memory buffer
+ * @return Size of the allocated buffer
+ */
+SizeT SE_(Memoize_OSetWord)(OSet *oset, UChar **dest);
 
 #endif // FOSBIN_SE_H

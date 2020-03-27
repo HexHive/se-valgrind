@@ -105,6 +105,33 @@ static SizeT SE_(write_io_vec_to_cmd_server)(SE_(io_vec) * io_vec,
   return bytes_written;
 }
 
+static SizeT SE_(write_coverage_to_cmd_server)(void) {
+  tl_assert(SE_(command_server));
+  tl_assert(program_states);
+
+  OSet *uniq_insts =
+      VG_(OSetWord_Create)(VG_(malloc), SE_TOOL_ALLOC_STR, VG_(free));
+  for (Word i = 0; i < VG_(sizeXA)(program_states); i++) {
+    VexGuestArchState *tmp =
+        (VexGuestArchState *)VG_(indexXA)(program_states, i);
+    if (!VG_(OSetWord_Contains)(uniq_insts, tmp->VG_INSTR_PTR)) {
+      VG_(OSetWord_Insert)(uniq_insts, tmp->VG_INSTR_PTR);
+    }
+  }
+
+  Word size = VG_(OSetWord_Size)(uniq_insts);
+  SE_(cmd_msg) msg;
+  msg.msg_type = SEMSG_COVERAGE;
+  msg.length = SE_(Memoize_OSetWord)(uniq_insts, &msg.data);
+
+  SizeT bytes_written =
+      SE_(write_msg_to_fd)(SE_(command_server)->executor_pipe[1], &msg, False);
+
+  VG_(free)(msg.data);
+  VG_(OSetWord_Destroy)(uniq_insts);
+  return bytes_written;
+}
+
 /**
  * @brief Records the executed system calls to SE_(current_io_vec),
  * captures the current program state in the expected_state member, then
@@ -459,6 +486,11 @@ static void SE_(report_success_to_commader)(void) {
   if (SE_(command_server)->using_fuzzed_io_vec &&
       SE_(command_server)->current_state != SERVER_GETTING_INIT_STATE) {
     SE_(send_fuzzed_io_vec)();
+  }
+
+  if (SE_(command_server)->needs_coverage &&
+      SE_(command_server)->current_state != SERVER_GETTING_INIT_STATE) {
+    SE_(write_coverage_to_cmd_server)();
   }
 
   SE_(cleanup_and_exit)();

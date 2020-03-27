@@ -55,7 +55,16 @@ typedef struct {
   Addr initial_stack_ptr;
   Addr current_stack_ptr;
   RangeMap *register_map;
+  Bool needs_coverage;
+  OSet *coverage;
 } SE_(cmd_server);
+
+/**
+ * @brief Reads the coverage of the last executed IOVec from the executor
+ * @param server
+ * @return
+ */
+OSet *SE_(read_coverage)(SE_(cmd_server) * server);
 
 /**
  * @brief Initializes and returns a command server, and bails on failure

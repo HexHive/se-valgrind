@@ -106,6 +106,8 @@ const HChar *SE_(msg_type_str)(SE_(cmd_msg_t) type) {
     return "SEMSG_TOO_MANY_INS";
   case SEMSG_TOO_MANY_ATTEMPTS:
     return "SEMSG_TOO_MANY_ATTEMPTS";
+  case SEMSG_COVERAGE:
+    return "SEMSG_COVERAGE";
   default:
     tl_assert(0);
   }

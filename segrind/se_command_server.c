@@ -44,6 +44,28 @@ static SizeT write_to_commander(SE_(cmd_server) * server, SE_(cmd_msg) * msg,
 }
 
 /**
+ * @brief Writes current coverage to the commander
+ * @param server
+ * @return Total bytes written to the commander or 0 on error
+ */
+static SizeT write_coverage_to_commander(SE_(cmd_server) * server) {
+  tl_assert(server);
+  tl_assert(server->coverage);
+
+  UChar *buf;
+
+  SizeT len = SE_(Memoize_OSetWord)(server->coverage, &buf);
+
+  /* Avoid copying the data twice */
+  SE_(cmd_msg) *cmd_msg = SE_(create_cmd_msg)(SEMSG_COVERAGE, 0, NULL);
+  cmd_msg->data = buf;
+  cmd_msg->length = len;
+
+  /* This frees buf */
+  return write_to_commander(server, cmd_msg, True);
+}
+
+/**
  * @brief Reads a single command message from the read command pipe
  * @param server
  * @return Command message or NULL on error
@@ -162,15 +184,8 @@ static Bool fuzz_program_state(SE_(cmd_server) * server) {
   }
 
   SE_(current_io_vec)->random_seed = SE_(seed);
+  server->needs_coverage = True;
 
-  //#if defined(VGA_amd64)
-  //  VG_(umsg)
-  //  ("Initial RDI = 0x%llx\n", SE_(current_io_vec)->initial_state.guest_RDI);
-  //  SE_(current_io_vec)->initial_state.guest_RDI = VG_(random)(&SE_(seed));
-  //  VG_(umsg)
-  //  ("Setting RDI = 0x%llx\n", SE_(current_io_vec)->initial_state.guest_RDI);
-  //  SE_(current_io_vec)->initial_state.guest_RAX = 0;
-  //#endif
   UInt size =
       VG_(sizeRangeMap)(SE_(current_io_vec)->initial_state.address_state);
   Bool in_obj = False;
@@ -236,6 +251,10 @@ static Bool handle_command(SE_(cmd_server) * server) {
       report_success(server, 0, NULL);
     }
     break;
+  case SEMSG_COVERAGE:
+    write_coverage_to_commander(server);
+    msg_handled = True;
+    break;
   case SEMSG_EXECUTE:
     msg_handled = SE_(set_server_state)(server, SERVER_EXECUTING);
     if (!msg_handled) {
@@ -269,6 +288,12 @@ static Bool handle_command(SE_(cmd_server) * server) {
   return parent_should_fork;
 }
 
+/**
+ * @brief Allocates a new object on the guest's stack
+ * @param server
+ * @param new_alloc_msg
+ * @return
+ */
 static Bool handle_new_alloc(SE_(cmd_server) * server,
                              SE_(cmd_msg) * new_alloc_msg) {
   tl_assert(server);
@@ -333,6 +358,29 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
   SE_(free_msg)(new_alloc_msg);
   SE_(set_server_state)(server, SERVER_WAITING_TO_EXECUTE);
   return True;
+}
+
+/**
+ * @brief Consumes the coverage from the executor
+ * @param server
+ */
+static void handle_coverage(SE_(cmd_server) * server) {
+  tl_assert(server->needs_coverage);
+
+  OSet *coverage = SE_(read_coverage)(server);
+  if (!server->coverage) {
+    server->coverage =
+        VG_(OSetWord_Create)(VG_(malloc), SE_TOOL_ALLOC_STR, VG_(free));
+  }
+
+  UWord addr;
+  while (VG_(OSetWord_Next)(coverage, &addr)) {
+    if (!VG_(OSetWord_Contains)(server->coverage, addr)) {
+      VG_(OSetWord_Insert)(server->coverage, addr);
+    }
+  }
+
+  VG_(OSetWord_Destroy)(coverage);
 }
 
 /**
@@ -414,6 +462,9 @@ static Bool wait_for_child(SE_(cmd_server) * server) {
         ("Got initial state FP = %p\n", (void *)server->initial_stack_ptr);
         report_success(server, 0, NULL);
       } else {
+        if (cmd_msg->msg_type == SEMSG_OK && server->needs_coverage) {
+          handle_coverage(server);
+        }
         write_to_commander(server, cmd_msg, True);
       }
     }
@@ -444,7 +495,6 @@ SE_(cmd_server) * SE_(make_server)(Int commander_r_fd, Int commander_w_fd) {
 
   SE_(cmd_server) *cmd_server = (SE_(cmd_server) *)VG_(malloc)(
       "SE_(cmd_server)", sizeof(SE_(cmd_server)));
-  tl_assert(cmd_server);
   VG_(umsg)("Command Server created!\n");
 
   cmd_server->current_state = SERVER_WAIT_FOR_CMD;
@@ -708,17 +758,7 @@ const HChar *SE_(server_state_str)(SE_(cmd_server_state) state) {
 void SE_(stop_server)(SE_(cmd_server) * server) {
   tl_assert(server);
 
-  if (server->running_pid > 0) {
-    VG_(kill)(server->running_pid, VKI_SIGKILL);
-  }
-
-  VG_(close)(server->commander_r_fd);
-  VG_(close)(server->commander_w_fd);
-
-  VG_(close)(server->executor_pipe[0]);
-  VG_(close)(server->executor_pipe[1]);
-
-  server->running_pid = -1;
+  SE_(reset_server)(server);
   server->current_state = SERVER_EXIT;
 }
 
@@ -745,6 +785,44 @@ void SE_(reset_server)(SE_(cmd_server) * server) {
   server->using_fuzzed_io_vec = False;
   server->using_existing_io_vec = False;
   server->attempt_count = 0;
+  server->needs_coverage = False;
+
+  if (server->register_map) {
+    VG_(deleteRangeMap)(server->register_map);
+    server->register_map = NULL;
+  }
+  if (server->coverage) {
+    VG_(OSetWord_Destroy)(server->coverage);
+    server->coverage = NULL;
+  }
 
   SE_(set_server_state)(server, SERVER_WAIT_FOR_CMD);
+}
+
+OSet *SE_(read_coverage)(SE_(cmd_server) * server) {
+  SE_(cmd_msg) *msg = read_from_executor(server);
+  tl_assert(msg);
+  tl_assert(msg->msg_type == SEMSG_COVERAGE);
+  tl_assert(msg->length > 0);
+
+  SizeT bytes_read = 0;
+
+  OSet *result =
+      VG_(OSetWord_Create)(VG_(malloc), SE_TOOL_ALLOC_STR, VG_(free));
+  Word count;
+  VG_(memcpy)(&count, msg->data, sizeof(count));
+  bytes_read += sizeof(count);
+  for (Word i = 0; i < count; i++) {
+    Word addr;
+    VG_(memcpy)(&addr, (UChar *)msg->data + bytes_read, sizeof(addr));
+    bytes_read += sizeof(addr);
+
+    if (!VG_(OSetWord_Contains)(result, addr)) {
+      VG_(OSetWord_Insert)(result, addr);
+    }
+  }
+
+  SE_(free_msg)(msg);
+
+  return result;
 }
