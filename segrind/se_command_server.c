@@ -220,7 +220,6 @@ static Bool handle_command(SE_(cmd_server) * server) {
   case SEMSG_SET_TGT:
     msg_handled = handle_set_target_cmd(cmd_msg, server);
     if (msg_handled) {
-      //      report_success(server, 0, NULL);
       /* Get the initial starting state for the server */
       parent_should_fork = True;
     }
@@ -410,6 +409,7 @@ static Bool wait_for_child(SE_(cmd_server) * server) {
         server->current_stack_ptr = server->initial_stack_ptr;
         VG_(umsg)
         ("Got initial state FP = %p\n", (void *)server->initial_stack_ptr);
+        report_success(server, 0, NULL);
       } else {
         write_to_commander(server, cmd_msg, True);
       }
@@ -421,7 +421,6 @@ static Bool wait_for_child(SE_(cmd_server) * server) {
   }
 
 cleanup:
-  //  VG_(umsg)("Cleaning up\n");
   wait_result = VG_(waitpid)(server->running_pid, &status, VKI_WNOHANG);
   if (wait_result < 0 || (!WIFEXITED(status) && !WIFSIGNALED(status))) {
     VG_(kill)(server->running_pid, VKI_SIGKILL);
@@ -509,12 +508,15 @@ static Bool SE_(fork_and_execute)(SE_(cmd_server) * server) {
                 True);
             break;
           }
+        } else {
+          break;
         }
       }
     }
   }
 
 exit:
+  server->attempt_count = 0;
   SE_(set_server_state)(server, SERVER_WAIT_FOR_CMD);
   return False;
 }
