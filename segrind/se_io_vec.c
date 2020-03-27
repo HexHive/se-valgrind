@@ -49,33 +49,62 @@ SizeT SE_(write_io_vec_to_fd)(Int fd, SE_(cmd_msg_t) msg_type,
   bytes_written += sizeof(io_vec->host_arch);
 
   VG_(memcpy)
-  (data + bytes_written - 1, &io_vec->host_endness,
-   sizeof(io_vec->host_endness));
+  (data + bytes_written, &io_vec->host_endness, sizeof(io_vec->host_endness));
   bytes_written += sizeof(io_vec->host_endness);
 
-  VG_(memcpy)
-  (data + bytes_written - 1, &io_vec->initial_state,
-   sizeof(io_vec->initial_state));
-  bytes_written += sizeof(io_vec->initial_state);
-
-  VG_(memcpy)
-  (data + bytes_written - 1, &io_vec->expected_state,
-   sizeof(io_vec->expected_state));
-  bytes_written += sizeof(io_vec->expected_state);
-
   Word count = VG_(OSetWord_Size)(io_vec->system_calls);
-  VG_(memcpy)(data + bytes_written - 1, &count, sizeof(count));
+  VG_(memcpy)(data + bytes_written, &count, sizeof(count));
   bytes_written += sizeof(count);
 
   UWord syscall_num;
   while (VG_(OSetWord_Next)(io_vec->system_calls, &syscall_num)) {
-    VG_(memcpy)(data + bytes_written - 1, &syscall_num, sizeof(syscall_num));
+    VG_(memcpy)(data + bytes_written, &syscall_num, sizeof(syscall_num));
     bytes_written += sizeof(syscall_num);
   }
 
   VG_(memcpy)
-  (data + bytes_written - 1, &io_vec->random_seed, sizeof(io_vec->random_seed));
+  (data + bytes_written, &io_vec->random_seed, sizeof(io_vec->random_seed));
   bytes_written += sizeof(io_vec->random_seed);
+
+  VG_(memcpy)
+  (data + bytes_written, &io_vec->initial_state.register_state,
+   sizeof(io_vec->initial_state.register_state));
+  bytes_written += sizeof(io_vec->initial_state.register_state);
+
+  UInt space_size = VG_(sizeRangeMap)(io_vec->initial_state.address_state);
+  VG_(memcpy)(data + bytes_written, &space_size, sizeof(space_size));
+  bytes_written += sizeof(space_size);
+  for (UInt i = 0; i < space_size; i++) {
+    UWord key_min, key_max, val;
+    VG_(indexRangeMap)
+    (&key_min, &key_max, &val, io_vec->initial_state.address_state, i);
+    VG_(memcpy)(data + bytes_written, &key_min, sizeof(key_min));
+    bytes_written += sizeof(key_min);
+    VG_(memcpy)(data + bytes_written, &key_max, sizeof(key_max));
+    bytes_written += sizeof(key_max);
+    VG_(memcpy)(data + bytes_written, &val, sizeof(val));
+    bytes_written += sizeof(val);
+  }
+
+  VG_(memcpy)
+  (data + bytes_written, &io_vec->expected_state.register_state,
+   sizeof(io_vec->expected_state.register_state));
+  bytes_written += sizeof(io_vec->expected_state.register_state);
+
+  space_size = VG_(sizeRangeMap)(io_vec->expected_state.address_state);
+  VG_(memcpy)(data + bytes_written, &space_size, sizeof(space_size));
+  bytes_written += sizeof(space_size);
+  for (UInt i = 0; i < space_size; i++) {
+    UWord key_min, key_max, val;
+    VG_(indexRangeMap)
+    (&key_min, &key_max, &val, io_vec->expected_state.address_state, i);
+    VG_(memcpy)(data + bytes_written, &key_min, sizeof(key_min));
+    bytes_written += sizeof(key_min);
+    VG_(memcpy)(data + bytes_written, &key_max, sizeof(key_max));
+    bytes_written += sizeof(key_max);
+    VG_(memcpy)(data + bytes_written, &val, sizeof(val));
+    bytes_written += sizeof(val);
+  }
 
   VG_(OSetWord_ResetIter)(io_vec->system_calls);
 
@@ -90,10 +119,16 @@ SizeT SE_(write_io_vec_to_fd)(Int fd, SE_(cmd_msg_t) msg_type,
 SizeT SE_(io_vec_size)(SE_(io_vec) * io_vec) {
   tl_assert(io_vec);
 
-  return (sizeof(VexArch)      /* Architecture type */
-          + sizeof(VexEndness) /* Endness */
-          + sizeof(Word)       /* System call count */
-          + VG_(OSetWord_Size)(io_vec->system_calls) *
-                sizeof(UWord) /* System calls */
-          + sizeof(io_vec->random_seed));
+  return sizeof(VexArch)      /* Architecture type */
+         + sizeof(VexEndness) /* Endness */
+         + sizeof(Word)       /* System call count */
+         + VG_(OSetWord_Size)(io_vec->system_calls) *
+               sizeof(UWord) /* System calls */
+         + sizeof(io_vec->random_seed) +
+         2 * sizeof(VexGuestArchState) /* register states */
+         + 2 * sizeof(UInt) +          /* Address space counts */
+         VG_(sizeRangeMap)(io_vec->initial_state.address_state) * 3 *
+             sizeof(UWord) +
+         VG_(sizeRangeMap)(io_vec->expected_state.address_state) * 3 *
+             sizeof(UWord);
 }

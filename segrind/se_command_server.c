@@ -298,10 +298,6 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
       new_alloc_loc = server->current_stack_ptr;
       server->current_stack_ptr -= SE_DEFAULT_ALLOC_SPACE + 2;
 
-      VG_(printf)
-      ("Allocating %ld bytes at %p\n", SE_DEFAULT_ALLOC_SPACE + 2,
-       (void *)new_alloc_loc);
-
       /* Mark the start and end points of the object */
       VG_(bindRangeMap)
       (SE_(current_io_vec)->initial_state.address_state, new_alloc_loc,
