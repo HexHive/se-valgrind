@@ -290,8 +290,8 @@ static void fix_address_space() {
       Word orig_stmt_idx = stmt_idx;
       for (Int i = irsb->stmts_used - 1; i >= 0; i--) {
         IRStmt *stmt = irsb->stmts[i];
-        //        ppIRStmt(stmt);
-        //        VG_(printf)("\n");
+        //                        ppIRStmt(stmt);
+        //                        VG_(printf)("\n");
         Bool taint_found = SE_(taint_found)();
         switch (stmt->tag) {
         case Ist_IMark:
@@ -353,6 +353,7 @@ static void fix_address_space() {
 
       idx = bbIdx;
       in_first_block = False;
+      stmt_idx = idx;
     }
   }
 
@@ -626,11 +627,14 @@ static IRSB *SE_(instrument_target)(IRSB *bb) {
     }
   }
 
-  UWord keyMin, keyMax, val;
-  VG_(lookupRangeMap)(&keyMin, &keyMax, &val, irsb_ranges, minAddress);
-  if (val == 0) {
-    VG_(bindRangeMap)(irsb_ranges, minAddress, maxAddress, minAddress);
-  }
+  //  UWord keyMin, keyMax, val;
+  //  VG_(lookupRangeMap)(&keyMin, &keyMax, &val, irsb_ranges, minAddress);
+  //  if (val == 0) {
+  //    VG_(umsg)
+  //    ("Creating irsb range [%p - %p]\n", (void *)minAddress, (void
+  //    *)maxAddress);
+  VG_(bindRangeMap)(irsb_ranges, minAddress, maxAddress, minAddress);
+  //  }
 
   return bbOut;
 }

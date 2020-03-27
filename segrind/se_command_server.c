@@ -382,6 +382,9 @@ static Bool wait_for_child(SE_(cmd_server) * server) {
       ("Got %s message from executor\n", SE_(msg_type_str)(cmd_msg->msg_type));
       if (server->using_fuzzed_io_vec && cmd_msg->msg_type == SEMSG_NEW_ALLOC) {
         should_fork = handle_new_alloc(server, cmd_msg);
+        if (!should_fork) {
+          report_error(server, "Could not handle tainted location");
+        }
         /* cmd_msg is freed in handle_new_alloc */
       } else if (server->current_state == SERVER_GETTING_INIT_STATE) {
         server->attempt_count--;

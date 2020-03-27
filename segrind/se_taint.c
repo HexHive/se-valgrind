@@ -111,6 +111,8 @@ static SE_(tainted_loc) *
       guest_state = VG_(indexXA)(program_states_, idx);
       result->type = taint_addr;
       result->location.addr = guest_state->VG_FRAME_PTR;
+      //      VG_(printf)("\tprogram_states_[%ld]->VG_FRAME_PTR = %p\n", idx,
+      //      (void*)guest_state->VG_FRAME_PTR);
     } else {
       result->type = taint_reg;
       result->location.offset = irExpr->Iex.Get.offset;
@@ -129,6 +131,15 @@ static SE_(tainted_loc) *
     result = create_loc(baseExpr, idx, res);
     break;
   case Iex_Const:
+    if (!result) {
+      result =
+          VG_(OSetGen_AllocNode)(tainted_locations_, sizeof(SE_(tainted_loc)));
+    }
+    result->type = taint_invalid;
+    result->location.offset = -1;
+    break;
+  case Iex_ITE:
+  case Iex_CCall:
     if (!result) {
       result =
           VG_(OSetGen_AllocNode)(tainted_locations_, sizeof(SE_(tainted_loc)));
@@ -219,6 +230,7 @@ IRExpr *SE_(get_IRExpr)(IRExpr *expr) {
   case Iex_RdTmp:
   case Iex_Get:
   case Iex_Const:
+  case Iex_CCall:
     result = expr;
     break;
   case Iex_Load:
@@ -275,8 +287,8 @@ void SE_(remove_IRExpr_taint)(IRExpr *irExpr, Word idx) {
 
   void *tmp = VG_(OSetGen_Remove)(tainted_locations_, &loc);
   if (tmp) {
-    //    VG_(printf)("\tRemoving taint from ");
-    //    SE_(ppTaintedLocation)(&loc);
+    VG_(printf)("\tRemoving taint from ");
+    SE_(ppTaintedLocation)(&loc);
     VG_(OSetGen_FreeNode)(tainted_locations_, tmp);
   }
 }
@@ -289,8 +301,8 @@ void SE_(taint_IRExpr)(IRExpr *irExpr, Word idx) {
   }
 
   if (!VG_(OSetGen_Contains)(tainted_locations_, loc)) {
-    //    VG_(printf)("\tTainting ");
-    //    SE_(ppTaintedLocation)(loc);
+    VG_(printf)("\tTainting ");
+    SE_(ppTaintedLocation)(loc);
     VG_(OSetGen_Insert)(tainted_locations_, loc);
   }
 
@@ -329,7 +341,7 @@ void SE_(remove_tainted_reg)(Int offset) {
   loc.type = taint_reg;
   loc.location.offset = offset;
 
-  //  VG_(printf)("\tRemoving taint from guest offset %d\n", offset);
+  VG_(printf)("\tRemoving taint from guest offset %d\n", offset);
 
   void *tmp = VG_(OSetGen_Remove)(tainted_locations_, &loc);
   if (tmp) {
@@ -352,8 +364,8 @@ void SE_(taint_temp)(IRTemp temp) {
   loc->location.temp = temp;
 
   if (!VG_(OSetGen_Contains)(tainted_locations_, loc)) {
-    //    VG_(printf)("\tTainting ");
-    //    SE_(ppTaintedLocation)(loc);
+    VG_(printf)("\tTainting ");
+    SE_(ppTaintedLocation)(loc);
     VG_(OSetGen_Insert)(tainted_locations_, loc);
   } else {
     VG_(OSetGen_FreeNode)(tainted_locations_, loc);
@@ -365,7 +377,7 @@ void SE_(remove_tainted_temp)(IRTemp temp) {
   loc.type = taint_temp;
   loc.location.offset = temp;
 
-  //  VG_(printf)("\tRemoving taint from temporary %u\n", temp);
+  VG_(printf)("\tRemoving taint from temporary %u\n", temp);
 
   void *tmp = VG_(OSetGen_Remove)(tainted_locations_, &loc);
   if (tmp) {
