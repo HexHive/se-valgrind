@@ -165,6 +165,12 @@ static Bool handle_set_target_cmd(SE_(cmd_msg) * msg,
   return False;
 }
 
+/**
+ * @brief Fuzzes the region specified
+ * @param seed
+ * @param start
+ * @param end
+ */
 static void fuzz_region(UInt *seed, Addr start, Addr end) {
   /* TODO: Implement a better fuzzing strategy */
   VG_(umsg)("Fuzzing [%p - %p]\n", (void *)start, (void *)end);
