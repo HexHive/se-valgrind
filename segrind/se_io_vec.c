@@ -75,6 +75,11 @@ SizeT SE_(write_io_vec_to_fd)(Int fd, SE_(cmd_msg_t) msg_type,
   (data + bytes_written, &io_vec->random_seed, sizeof(io_vec->random_seed));
   bytes_written += sizeof(io_vec->random_seed);
 
+  SizeT guest_state_size = sizeof(VexGuestArchState);
+  VG_(memcpy)
+  (data + bytes_written, &guest_state_size, sizeof(VexGuestArchState));
+  bytes_written += sizeof(VexGuestArchState);
+
   VG_(memcpy)
   (data + bytes_written, &io_vec->initial_state.register_state,
    sizeof(io_vec->initial_state.register_state));
@@ -144,5 +149,6 @@ SizeT SE_(io_vec_size)(SE_(io_vec) * io_vec) {
              sizeof(UWord) +
          VG_(sizeRangeMap)(io_vec->expected_state.address_state) * 3 *
              sizeof(UWord) +
-         sizeof(VexGuestArchState); /* register map */
+         sizeof(VexGuestArchState) /* register map */
+         + sizeof(SizeT);          /* Size of VexGuestArchState */
 }
