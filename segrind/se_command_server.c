@@ -175,7 +175,7 @@ static void fuzz_region(UInt *seed, Addr start, Addr end) {
   tl_assert(start <= end);
 
   /* TODO: Implement a better fuzzing strategy */
-  VG_(umsg)("Fuzzing [%p - %p]\n", (void *)start, (void *)end);
+  //  VG_(umsg)("Fuzzing [%p - %p]\n", (void *)start, (void *)end);
   VG_(memset)((void *)start, VG_(random)(seed), end - start);
 }
 
@@ -217,13 +217,12 @@ static Bool fuzz_program_state(SE_(cmd_server) * server) {
     }
   }
 
-  /* Fuzz registers, if they aren't assigned to an allocated pointer
-   * */
+  /* Fuzz registers, if they aren't assigned to an allocated pointer */
   Int gpr_offsets[] = SE_O_GPRS;
   for (Int i = 0; i < SE_NUM_GPRS; i++) {
     Int current_offset = gpr_offsets[i];
     RegWord reg_val =
-        (RegWord)SE_(current_io_vec)->register_state_map[current_offset];
+        *(RegWord *)(&SE_(current_io_vec)->register_state_map[current_offset]);
     if (reg_val != ALLOCATED_SUBPTR_MAGIC) {
       fuzz_region(
           &SE_(seed),
@@ -365,8 +364,8 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
       *(Addr *)(((UChar *)(&SE_(current_io_vec)->initial_state.register_state) +
                  tainted_loc.location.offset)) = new_alloc_loc + 1;
 
-      *(Addr *)(&SE_(current_io_vec)
-                     ->register_state_map[tainted_loc.location.offset]) =
+      *(RegWord *)(&SE_(current_io_vec)
+                        ->register_state_map[tainted_loc.location.offset]) =
           ALLOCATED_SUBPTR_MAGIC;
 #if defined(VGA_amd64)
       VG_(umsg)
@@ -525,9 +524,9 @@ SE_(cmd_server) * SE_(make_server)(Int commander_r_fd, Int commander_w_fd) {
 
   SE_(cmd_server) *cmd_server = (SE_(cmd_server) *)VG_(malloc)(
       "SE_(cmd_server)", sizeof(SE_(cmd_server)));
-  VG_(umsg)("Command Server created!\n");
 
-  cmd_server->current_state = SERVER_WAIT_FOR_CMD;
+  VG_(memset)(cmd_server, 0, sizeof(SE_(cmd_server)));
+  cmd_server->current_state = SERVER_WAIT_FOR_START;
   SE_(reset_server)(cmd_server);
   cmd_server->commander_r_fd = commander_r_fd;
   cmd_server->commander_w_fd = commander_w_fd;
@@ -817,10 +816,6 @@ void SE_(reset_server)(SE_(cmd_server) * server) {
   server->attempt_count = 0;
   server->needs_coverage = False;
 
-  if (server->register_map) {
-    VG_(deleteRangeMap)(server->register_map);
-    server->register_map = NULL;
-  }
   if (server->coverage) {
     VG_(OSetWord_Destroy)(server->coverage);
     server->coverage = NULL;

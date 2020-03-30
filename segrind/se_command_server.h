@@ -54,7 +54,6 @@ typedef struct {
   UInt attempt_count;
   Addr initial_stack_ptr;
   Addr current_stack_ptr;
-  RangeMap *register_map;
   Bool needs_coverage;
   OSet *coverage;
 } SE_(cmd_server);

@@ -201,7 +201,7 @@ static void SE_(cleanup_and_exit)(void) {
 
 static void SE_(post_clo_init)(void) {
   SE_(command_server) = SE_(make_server)(SE_(cmd_in), SE_(cmd_out));
-  tl_assert(SE_(command_server));
+  VG_(umsg)("Command Server created!\n");
 }
 
 /**
