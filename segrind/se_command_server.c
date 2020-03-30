@@ -172,6 +172,8 @@ static Bool handle_set_target_cmd(SE_(cmd_msg) * msg,
  * @param end
  */
 static void fuzz_region(UInt *seed, Addr start, Addr end) {
+  tl_assert(start <= end);
+
   /* TODO: Implement a better fuzzing strategy */
   VG_(umsg)("Fuzzing [%p - %p]\n", (void *)start, (void *)end);
   VG_(memset)((void *)start, VG_(random)(seed), end - start);
@@ -192,6 +194,7 @@ static Bool fuzz_program_state(SE_(cmd_server) * server) {
   SE_(current_io_vec)->random_seed = SE_(seed);
   server->needs_coverage = True;
 
+  /* Fuzz input pointers */
   UInt size =
       VG_(sizeRangeMap)(SE_(current_io_vec)->initial_state.address_state);
   Bool in_obj = False;
@@ -211,6 +214,23 @@ static Bool fuzz_program_state(SE_(cmd_server) * server) {
 
     if (in_obj && val != ALLOCATED_SUBPTR_MAGIC) {
       fuzz_region(&SE_(seed), key_min, key_max);
+    }
+  }
+
+  /* Fuzz registers, if they aren't assigned to an allocated pointer
+   * */
+  Int gpr_offsets[] = SE_O_GPRS;
+  for (Int i = 0; i < SE_NUM_GPRS; i++) {
+    Int current_offset = gpr_offsets[i];
+    RegWord reg_val =
+        (RegWord)SE_(current_io_vec)->register_state_map[current_offset];
+    if (reg_val != ALLOCATED_SUBPTR_MAGIC) {
+      fuzz_region(
+          &SE_(seed),
+          (Addr)((UChar *)&SE_(current_io_vec)->initial_state.register_state +
+                 current_offset),
+          (Addr)((UChar *)&SE_(current_io_vec)->initial_state.register_state +
+                 current_offset + sizeof(RegWord) - 1));
     }
   }
 
@@ -344,6 +364,10 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
        (void *)(new_alloc_loc + 1));
       *(Addr *)(((UChar *)(&SE_(current_io_vec)->initial_state.register_state) +
                  tainted_loc.location.offset)) = new_alloc_loc + 1;
+
+      *(Addr *)(&SE_(current_io_vec)
+                     ->register_state_map[tainted_loc.location.offset]) =
+          ALLOCATED_SUBPTR_MAGIC;
 #if defined(VGA_amd64)
       VG_(umsg)
       ("RDI = 0x%llx\n",

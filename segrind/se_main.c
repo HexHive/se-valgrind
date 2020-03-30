@@ -119,10 +119,9 @@ static SizeT SE_(write_coverage_to_cmd_server)(void) {
     }
   }
 
-  Word size = VG_(OSetWord_Size)(uniq_insts);
   SE_(cmd_msg) msg;
   msg.msg_type = SEMSG_COVERAGE;
-  msg.length = SE_(Memoize_OSetWord)(uniq_insts, &msg.data);
+  msg.length = SE_(Memoize_OSetWord)(uniq_insts, (UChar **)&msg.data);
 
   SizeT bytes_written =
       SE_(write_msg_to_fd)(SE_(command_server)->executor_pipe[1], &msg, False);

@@ -26,6 +26,15 @@ SE_(io_vec) * SE_(create_io_vec)(void) {
   io_vec->expected_state.address_state =
       VG_(newRangeMap)(VG_(malloc), SE_IOVEC_MALLOC_TYPE, VG_(free), 0);
 
+  Int offset = VG_O_STACK_PTR;
+  *(Addr *)(&io_vec->register_state_map[offset]) = ALLOCATED_SUBPTR_MAGIC;
+
+  offset = VG_O_INSTR_PTR;
+  *(Addr *)(&io_vec->register_state_map[offset]) = ALLOCATED_SUBPTR_MAGIC;
+
+  offset = VG_O_FRAME_PTR;
+  *(Addr *)(&io_vec->register_state_map[offset]) = ALLOCATED_SUBPTR_MAGIC;
+
   return io_vec;
 }
 
@@ -106,6 +115,10 @@ SizeT SE_(write_io_vec_to_fd)(Int fd, SE_(cmd_msg_t) msg_type,
     bytes_written += sizeof(val);
   }
 
+  VG_(memcpy)
+  (data + bytes_written, io_vec->register_state_map, sizeof(VexGuestArchState));
+  bytes_written += sizeof(VexGuestArchState);
+
   VG_(OSetWord_ResetIter)(io_vec->system_calls);
 
   SE_(cmd_msg) *cmd_msg = SE_(create_cmd_msg)(msg_type, bytes_written, data);
@@ -130,5 +143,6 @@ SizeT SE_(io_vec_size)(SE_(io_vec) * io_vec) {
          VG_(sizeRangeMap)(io_vec->initial_state.address_state) * 3 *
              sizeof(UWord) +
          VG_(sizeRangeMap)(io_vec->expected_state.address_state) * 3 *
-             sizeof(UWord);
+             sizeof(UWord) +
+         sizeof(VexGuestArchState); /* register map */
 }

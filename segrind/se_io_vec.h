@@ -20,19 +20,22 @@ const HChar *SE_IOVEC_MALLOC_TYPE;
 #define OBJ_END_MAGIC 0xA110CAED
 
 typedef struct se_program_state_ {
-  VexGuestArchState register_state;
-  RangeMap *address_state;
+  VexGuestArchState register_state; /* Register values */
+  RangeMap *address_state; /* Which addresses are allocated as objects */
 } SE_(program_state);
 
 typedef struct io_vec {
-  VexArch host_arch;
-  VexEndness host_endness;
-  UInt random_seed;
+  VexArch host_arch;       /* Architecture that generated this IOVec */
+  VexEndness host_endness; /* Endianess of generation machine */
+  UInt random_seed;        /* Random seed used to fuzz this IOVec */
 
-  SE_(program_state) initial_state;
-  SE_(program_state) expected_state;
+  SE_(program_state) initial_state;  /* Initial program state */
+  SE_(program_state) expected_state; /* State expected post-execution */
 
-  OSet *system_calls;
+  /* Maps which parts of the register states are pointers */
+  UChar register_state_map[sizeof(VexGuestArchState)];
+
+  OSet *system_calls; /* Unique set of system calls executed */
 } SE_(io_vec);
 
 /**
