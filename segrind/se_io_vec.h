@@ -63,4 +63,11 @@ SizeT SE_(write_io_vec_to_fd)(Int fd, SE_(cmd_msg_t) msg_type,
  */
 SizeT SE_(io_vec_size)(SE_(io_vec) * io_vec);
 
+/**
+ * @brief Reads an IOVec from the specified file descriptor
+ * @param fd
+ * @return IOVec or NULL on error
+ */
+SE_(io_vec) * SE_(read_io_vec_from_fd)(Int fd);
+
 #endif // SE_VALGRIND_SE_IO_VEC_H

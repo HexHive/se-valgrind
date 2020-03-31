@@ -31,7 +31,7 @@ typedef enum se_message_type_t_ {
   SEMSG_FAILED_CTX,        /* The provided IOVec failed */
   SEMSG_TOO_MANY_INS,      /* The function executed too many instructions */
   SEMSG_TOO_MANY_ATTEMPTS, /* Could not execute target function */
-  SEMSG_COVERAGE           /* Coverage information */
+  /* Coverage information */
 } SE_(cmd_msg_t);
 
 /**

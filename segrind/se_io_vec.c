@@ -152,3 +152,8 @@ SizeT SE_(io_vec_size)(SE_(io_vec) * io_vec) {
          sizeof(VexGuestArchState) /* register map */
          + sizeof(SizeT);          /* Size of VexGuestArchState */
 }
+
+SE_(io_vec) * SE_(read_io_vec_from_fd)(Int fd) {
+  /* TODO: Implement me */
+  return NULL;
+}
