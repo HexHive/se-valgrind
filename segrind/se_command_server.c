@@ -622,7 +622,6 @@ SE_(cmd_server) * SE_(make_server)(Int commander_r_fd, Int commander_w_fd) {
       "SE_(cmd_server)", sizeof(SE_(cmd_server)));
 
   VG_(memset)(cmd_server, 0, sizeof(SE_(cmd_server)));
-  cmd_server->current_state = SERVER_WAIT_FOR_START;
   SE_(reset_server)(cmd_server);
   cmd_server->commander_r_fd = commander_r_fd;
   cmd_server->commander_w_fd = commander_w_fd;
@@ -794,6 +793,8 @@ Bool SE_(is_valid_transition)(const SE_(cmd_server) * server,
             next_state == SERVER_REPORT_ERROR);
   case SERVER_REPORT_ERROR:
     return (next_state == SERVER_WAIT_FOR_CMD);
+  case SERVER_INVALID:
+    return True;
   default:
     return False;
   }

@@ -90,6 +90,9 @@ static Int recursive_target_call_count = 0;
 
 static void SE_(report_failure_to_commander)(void);
 static void fix_address_space(void);
+static IRDirty *make_call_to_record_current_state(void);
+static IRDirty *make_call_to_jump_to_target(void);
+static IRDirty *make_call_to_report_success(void);
 
 /**
  * @brief Writes SEMSG_OK msg with io_vec to the commander process
@@ -333,8 +336,8 @@ static void fix_address_space() {
         case Ist_IMark:
           stmt_idx--;
           if (!found_faulting_addr && stmt->Ist.IMark.addr == faulting_addr) {
-            VG_(printf)("\tFound faulting address %p\n", (void *)faulting_addr);
-
+            //            VG_(printf)("\tFound faulting address %p\n", (void
+            //            *)faulting_addr);
             found_faulting_addr = True;
           }
           continue;
@@ -376,13 +379,6 @@ static void fix_address_space() {
                 !SE_(is_IRExpr_tainted)(data, stmt_idx)) {
               SE_(remove_tainted_temp)(stmt->Ist.WrTmp.tmp);
               SE_(taint_IRExpr)(data, stmt_idx);
-              if (SE_(get_IRExpr)(data)->tag == Iex_Get) {
-                IRExpr *g = SE_(get_IRExpr)(data);
-                VG_(printf)
-                ("\t%d = 0x%lx\n", g->Iex.Get.offset,
-                 *(RegWord *)((UChar *)VG_(indexXA)(program_states, stmt_idx) +
-                              g->Iex.Get.offset));
-              }
             } else if (!SE_(temp_tainted)(stmt->Ist.WrTmp.tmp) &&
                        SE_(is_IRExpr_tainted)(data, stmt_idx)) {
               /* A temporary has been assigned a tainted value, so
@@ -539,6 +535,20 @@ static void SE_(report_failure_to_commander)(void) {
 static void SE_(thread_exit)(ThreadId tid) {}
 
 /**
+ * @brief Records the current guest state if the client is running, main is
+ * replaced, and the target has been called.
+ */
+static void record_current_state(void) {
+  if (client_running && main_replaced && target_called) {
+    //    VG_(umsg)("Recording state for 0x%lx\n", VG_(get_IP)(target_id));
+    VexGuestArchState current_state;
+    VG_(get_shadow_regs_area)
+    (target_id, (UChar *)&current_state, 0, 0, sizeof(current_state));
+    VG_(addToXA)(program_states, &current_state);
+  }
+}
+
+/**
  * @brief Sets the input state for the target function upon entry.
  */
 static void jump_to_target_function(void) {
@@ -566,6 +576,7 @@ static void jump_to_target_function(void) {
    sizeof(SE_(command_server)->current_io_vec->initial_state.register_state),
    (UChar *)&SE_(command_server)->current_io_vec->initial_state.register_state);
   target_called = True;
+  record_current_state();
 }
 
 /**
@@ -582,20 +593,6 @@ static void SE_(start_client_code)(ThreadId tid, ULong blocks_dispatched) {
   if (!main_replaced &&
       VG_(get_IP)(target_id) == SE_(command_server)->main_addr) {
     SE_(report_failure_to_commander)();
-  }
-}
-
-/**
- * @brief Records the current guest state if the client is running, main is
- * replaced, and the target has been called.
- */
-static void record_current_state(void) {
-  if (client_running && main_replaced && target_called) {
-    //    VG_(umsg)("Recording state for 0x%lx\n", VG_(get_IP)(target_id));
-    VexGuestArchState current_state;
-    VG_(get_shadow_regs_area)
-    (target_id, (UChar *)&current_state, 0, 0, sizeof(current_state));
-    VG_(addToXA)(program_states, &current_state);
   }
 }
 
@@ -620,6 +617,46 @@ static Bool is_last_IMark(Int idx, Int max, IRStmt **stmts) {
   }
 
   return True;
+}
+
+static IRDirty *make_call_to_record_current_state() {
+  IRDirty *di = unsafeIRDirty_0_N(0, "record_current_state",
+                                  VG_(fnptr_to_fnentry)(&record_current_state),
+                                  mkIRExprVec_0());
+  di->nFxState = 1;
+  di->fxState[0].fx = Ifx_Read;
+  di->fxState[0].offset = 0;
+  di->fxState[0].size = sizeof(VexGuestArchState);
+  di->fxState[0].nRepeats = 0;
+  di->fxState[0].repeatLen = 0;
+
+  return di;
+}
+
+static IRDirty *make_call_to_jump_to_target() {
+  IRDirty *di = unsafeIRDirty_0_N(
+      0, "jump_to_target_function",
+      VG_(fnptr_to_fnentry)(&jump_to_target_function), mkIRExprVec_0());
+
+  if (!target_called) {
+    di->nFxState = 1;
+    di->fxState[0].fx = Ifx_Write;
+    di->fxState[0].offset = 0;
+    di->fxState[0].size = sizeof(VexGuestArchState);
+    di->fxState[0].nRepeats = 0;
+    di->fxState[0].repeatLen = 0;
+  }
+
+  return di;
+}
+
+static IRDirty *make_call_to_report_success() {
+  IRDirty *di = unsafeIRDirty_0_N(
+      0, "maybe_report_success_to_commader",
+      VG_(fnptr_to_fnentry)(&SE_(maybe_report_success_to_commader)),
+      mkIRExprVec_0());
+
+  return di;
 }
 
 /**
@@ -666,31 +703,21 @@ static IRSB *SE_(instrument_target)(IRSB *bb) {
         maxAddress = (UWord)stmt->Ist.IMark.addr;
       }
       if (stmt->Ist.IMark.addr == SE_(command_server)->target_func_addr) {
-        di = unsafeIRDirty_0_N(0, "jump_to_target_function",
-                               VG_(fnptr_to_fnentry)(&jump_to_target_function),
-                               mkIRExprVec_0());
+        di = make_call_to_jump_to_target();
         addStmtToIRSB(bbOut, IRStmt_Dirty(di));
       } else if (VG_(strcmp)(fnname, target_name) == 0 &&
                  is_last_IMark(i, bb->stmts_used, bb->stmts) &&
                  bb->jumpkind == Ijk_Ret) {
-        di = unsafeIRDirty_0_N(
-            0, "maybe_report_success_to_commader",
-            VG_(fnptr_to_fnentry)(&SE_(maybe_report_success_to_commader)),
-            mkIRExprVec_0());
+        di = make_call_to_report_success();
+        addStmtToIRSB(bbOut, IRStmt_Dirty(di));
+      } else {
+        di = make_call_to_record_current_state();
         addStmtToIRSB(bbOut, IRStmt_Dirty(di));
       }
-
-      di = unsafeIRDirty_0_N(0, "record_current_state",
-                             VG_(fnptr_to_fnentry)(&record_current_state),
-                             mkIRExprVec_0());
-      addStmtToIRSB(bbOut, IRStmt_Dirty(di));
       break;
     case Ist_Exit:
       if (VG_(strcmp)(fnname, target_name) == 0 && bb->jumpkind != Ijk_Boring) {
-        di = unsafeIRDirty_0_N(
-            0, "maybe_report_success_to_commader",
-            VG_(fnptr_to_fnentry)(&SE_(maybe_report_success_to_commader)),
-            mkIRExprVec_0());
+        di = make_call_to_report_success();
         addStmtToIRSB(bbOut, IRStmt_Dirty(di));
       } else {
         addStmtToIRSB(bbOut, stmt);
@@ -711,6 +738,9 @@ static IRSB *SE_(instrument_target)(IRSB *bb) {
   VG_(bindRangeMap)(irsb_ranges, minAddress, maxAddress, minAddress);
   //  }
 
+  if (VG_(strcmp)(fnname, target_name) == 0) {
+    ppIRSB(bbOut);
+  }
   return bbOut;
 }
 
