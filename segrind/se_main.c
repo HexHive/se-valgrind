@@ -540,11 +540,19 @@ static void SE_(thread_exit)(ThreadId tid) {}
  */
 static void record_current_state(void) {
   if (client_running && main_replaced && target_called) {
-    //    VG_(umsg)("Recording state for 0x%lx\n", VG_(get_IP)(target_id));
+    VG_(umsg)("Recording state for 0x%lx\n", VG_(get_IP)(target_id));
     VexGuestArchState current_state;
     VG_(get_shadow_regs_area)
     (target_id, (UChar *)&current_state, 0, 0, sizeof(current_state));
     VG_(addToXA)(program_states, &current_state);
+    VG_(printf)
+    ("\tSP = %p (0x%lx)\n", (void *)current_state.VG_STACK_PTR,
+     current_state.VG_STACK_PTR == 0 ? 0xdeadbeef
+                                     : *(RegWord *)current_state.VG_STACK_PTR);
+    VG_(printf)
+    ("\tFP = %p (0x%lx)\n", (void *)current_state.VG_FRAME_PTR,
+     current_state.VG_FRAME_PTR == 0 ? 0xdeadbeef
+                                     : *(RegWord *)current_state.VG_FRAME_PTR);
   }
 }
 
