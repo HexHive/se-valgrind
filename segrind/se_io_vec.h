@@ -15,9 +15,10 @@
 
 const HChar *SE_IOVEC_MALLOC_TYPE;
 
-#define ALLOCATED_SUBPTR_MAGIC 0xA110CA7E
-#define OBJ_START_MAGIC 0xA110CA57
-#define OBJ_END_MAGIC 0xA110CAED
+#define ALLOCATED_SUBPTR_MAGIC 0b00000001
+#define OBJ_START_MAGIC 0b00000010
+#define OBJ_END_MAGIC 0b00000100
+#define OBJ_ALLOCATED_MAGIC 0b00001000
 
 typedef struct se_program_state_ {
   VexGuestArchState register_state; /* Register values */

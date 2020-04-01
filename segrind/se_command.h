@@ -16,10 +16,10 @@ const HChar *SE_MSG_MALLOC_TYPE;
  * server, and commander
  */
 typedef enum se_message_type_t_ {
-  SEMSG_FAIL = -1,        /* Request failed */
-  SEMSG_OK,               /* Request succeeded */
-  SEMSG_ACK,              /* Request receieved */
-  SEMSG_SET_TGT,          /* Change target function */
+  SEMSG_FAIL = -1,         /* Request failed */
+  SEMSG_OK,                /* Request succeeded */
+  SEMSG_ACK,               /* Request receieved */
+  SEMSG_SET_TGT,           /* Change target function */
   SEMSG_EXIT,              /* Shutdown */
   SEMSG_FUZZ,              /* Fuzz program state */
   SEMSG_EXECUTE,           /* Execute target function */
@@ -31,7 +31,7 @@ typedef enum se_message_type_t_ {
   SEMSG_FAILED_CTX,        /* The provided IOVec failed */
   SEMSG_TOO_MANY_INS,      /* The function executed too many instructions */
   SEMSG_TOO_MANY_ATTEMPTS, /* Could not execute target function */
-  /* Coverage information */
+  SEMSG_COVERAGE           /* Coverage information */
 } SE_(cmd_msg_t);
 
 /**

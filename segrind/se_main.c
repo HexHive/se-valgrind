@@ -28,6 +28,7 @@
 #include "se_defs.h"
 #include "se_io_vec.h"
 #include "se_taint.h"
+#include <libvex_ir.h>
 
 #include "libvex.h"
 #include "libvex_ir.h"
@@ -81,6 +82,11 @@ static RangeMap *irsb_ranges = NULL;
  * @brief The name of the target function
  */
 static HChar *target_name = NULL;
+
+/**
+ * @brief Used for recursive calls
+ */
+static Int recursive_target_call_count = 0;
 
 static void SE_(report_failure_to_commander)(void);
 static void fix_address_space(void);
@@ -139,13 +145,17 @@ static SizeT SE_(write_coverage_to_cmd_server)(void) {
 static void SE_(send_fuzzed_io_vec)(void) {
   UWord syscall_num;
   while (VG_(OSetWord_Next)(syscalls, &syscall_num)) {
-    VG_(OSetWord_Insert)(SE_(current_io_vec)->system_calls, syscall_num);
+    VG_(OSetWord_Insert)
+    (SE_(command_server)->current_io_vec->system_calls, syscall_num);
   }
   VG_(get_shadow_regs_area)
-  (target_id, (UChar *)&SE_(current_io_vec)->expected_state.register_state, 0,
-   0, sizeof(SE_(current_io_vec)->expected_state.register_state));
+  (target_id,
+   (UChar *)&SE_(command_server)->current_io_vec->expected_state.register_state,
+   0, 0,
+   sizeof(SE_(command_server)->current_io_vec->expected_state.register_state));
 
-  tl_assert(SE_(write_io_vec_to_cmd_server)(SE_(current_io_vec), True) > 0);
+  tl_assert(SE_(write_io_vec_to_cmd_server)(SE_(command_server)->current_io_vec,
+                                            True) > 0);
 }
 
 /**
@@ -236,6 +246,10 @@ static void fix_address_space() {
       VG_(indexXA)(program_states, VG_(sizeXA)(program_states) - 1);
   Addr faulting_addr = last_state->VG_INSTR_PTR;
 
+  VG_(umsg)
+  ("last_state->STACK_PTR = %p (0x%lx)\n", (void *)last_state->VG_STACK_PTR,
+   *(RegWord *)last_state->VG_STACK_PTR);
+
   VexGuestArchState *current_state;
   VexArch guest_arch;
   VexArchInfo guest_arch_info;
@@ -316,15 +330,32 @@ static void fix_address_space() {
       Word orig_stmt_idx = stmt_idx;
       for (Int i = irsb->stmts_used - 1; i >= 0; i--) {
         IRStmt *stmt = irsb->stmts[i];
-        //                        ppIRStmt(stmt);
-        //                        VG_(printf)("\n");
+        ppIRStmt(stmt);
+        VG_(printf)("\n");
         Bool taint_found = SE_(taint_found)();
         switch (stmt->tag) {
         case Ist_IMark:
           stmt_idx--;
+          VG_(printf)
+          ("\tStack ptr = %p (0x%lx)\n",
+           (void *)((VexGuestArchState *)VG_(indexXA)(program_states, stmt_idx))
+               ->VG_STACK_PTR,
+           *(RegWord *)((VexGuestArchState *)VG_(indexXA)(program_states,
+                                                          stmt_idx))
+                ->VG_STACK_PTR);
+          VG_(printf)
+          ("\tFrame ptr = %p (0x%lx)\n",
+           (void *)((VexGuestArchState *)VG_(indexXA)(program_states, stmt_idx))
+               ->VG_FRAME_PTR,
+           ((VexGuestArchState *)VG_(indexXA)(program_states, stmt_idx))
+                       ->VG_FRAME_PTR == 0
+               ? 0xdeadbeef
+               : *(RegWord *)((VexGuestArchState *)VG_(indexXA)(program_states,
+                                                                stmt_idx))
+                      ->VG_FRAME_PTR);
           if (!found_faulting_addr && stmt->Ist.IMark.addr == faulting_addr) {
-            //            VG_(printf)("\tFound faulting address %p\n", (void
-            //            *)faulting_addr);
+            VG_(printf)("\tFound faulting address %p\n", (void *)faulting_addr);
+
             found_faulting_addr = True;
           }
           continue;
@@ -344,11 +375,16 @@ static void fix_address_space() {
           }
           continue;
         case Ist_Put:
+          if (stmt->Ist.Put.offset == VG_O_INSTR_PTR) {
+            continue;
+          }
+
           if (found_faulting_addr) {
             IRExpr *data = stmt->Ist.Put.data;
             if (!taint_found) {
               SE_(taint_IRExpr)(data, stmt_idx);
-            } else if (SE_(guest_reg_tainted)(stmt->Ist.Put.offset)) {
+            } else if (SE_(guest_reg_tainted)(stmt->Ist.Put.offset) &&
+                       !SE_(is_IRExpr_tainted)(data, stmt_idx)) {
               SE_(remove_tainted_reg)(stmt->Ist.Put.offset);
               SE_(taint_IRExpr)(data, stmt_idx);
             }
@@ -356,14 +392,23 @@ static void fix_address_space() {
           continue;
         case Ist_WrTmp:
           if (found_faulting_addr) {
-            if (SE_(temp_tainted)(stmt->Ist.WrTmp.tmp)) {
-              IRExpr *data = stmt->Ist.WrTmp.data;
+            IRExpr *data = stmt->Ist.WrTmp.data;
+            if (SE_(temp_tainted)(stmt->Ist.WrTmp.tmp) &&
+                !SE_(is_IRExpr_tainted)(data, stmt_idx)) {
               SE_(remove_tainted_temp)(stmt->Ist.WrTmp.tmp);
               SE_(taint_IRExpr)(data, stmt_idx);
-            } else if (SE_(is_IRExpr_tainted)(stmt->Ist.WrTmp.data, stmt_idx)) {
+              if (SE_(get_IRExpr)(data)->tag == Iex_Get) {
+                IRExpr *g = SE_(get_IRExpr)(data);
+                VG_(printf)
+                ("\t%d = 0x%lx\n", g->Iex.Get.offset,
+                 *(RegWord *)((UChar *)VG_(indexXA)(program_states, stmt_idx) +
+                              g->Iex.Get.offset));
+              }
+            } else if (!SE_(temp_tainted)(stmt->Ist.WrTmp.tmp) &&
+                       SE_(is_IRExpr_tainted)(data, stmt_idx)) {
               /* A temporary has been assigned a tainted value, so
                * start looking for its use in the IRSB */
-              SE_(remove_IRExpr_taint)(stmt->Ist.WrTmp.data, stmt_idx);
+              SE_(remove_IRExpr_taint)(data, stmt_idx);
               SE_(taint_temp)(stmt->Ist.WrTmp.tmp);
               //              VG_(printf)("\tRestarting analysis\n");
               stmt_idx = orig_stmt_idx;
@@ -478,9 +523,13 @@ static void SE_(thread_creation)(ThreadId tid, ThreadId child) {
  * @brief Sends SEMSG_OK msg to commander process. Includes full fuzzed IOVec if
  * the command server is using a fuzzed input program state
  */
-static void SE_(report_success_to_commader)(void) {
+static void SE_(maybe_report_success_to_commader)(void) {
   tl_assert(client_running);
   tl_assert(main_replaced);
+
+  if (--recursive_target_call_count > 0) {
+    return;
+  }
 
   if (SE_(command_server)->using_fuzzed_io_vec &&
       SE_(command_server)->current_state != SERVER_GETTING_INIT_STATE) {
@@ -518,6 +567,7 @@ static void jump_to_target_function(void) {
   tl_assert(main_replaced);
 
   if (target_called) {
+    recursive_target_call_count++;
     return;
   }
 
@@ -534,18 +584,40 @@ static void jump_to_target_function(void) {
     SE_(cleanup_and_exit)();
   }
 
+  //  VG_(umsg)
+  //  ("SP = %p (0x%lx)\tFP = %p (0x%lx)\n",
+  //   (void *)SE_(command_server)
+  //       ->current_io_vec->initial_state.register_state.VG_STACK_PTR,
+  //   *(RegWord *)(SE_(command_server)
+  //                    ->current_io_vec->initial_state.register_state
+  //                    .VG_STACK_PTR),
+  //   (void *)SE_(command_server)
+  //       ->current_io_vec->initial_state.register_state.VG_FRAME_PTR,
+  //   *(RegWord *)(SE_(command_server)
+  //                    ->current_io_vec->initial_state.register_state
+  //                    .VG_FRAME_PTR));
+  VG_(umsg)
+  ("SP = %p (0x%lx)\tFP = %p (0x%lx)\n", (void *)VG_(get_SP)(target_id),
+   VG_(get_SP)(target_id) == 0 ? 0xdeadbeef
+                               : *(RegWord *)VG_(get_SP)(target_id),
+   (void *)VG_(get_FP)(target_id),
+   VG_(get_FP)(target_id) == 0 ? 0xdeadbeef
+                               : *(RegWord *)VG_(get_FP)(target_id));
+
   VG_(umsg)
   ("Setting program state. SP = %p\n",
-   (void *)SE_(current_io_vec)->initial_state.register_state.VG_STACK_PTR);
+   (void *)SE_(command_server)
+       ->current_io_vec->initial_state.register_state.VG_STACK_PTR);
   VG_(set_shadow_regs_area)
-  (target_id, 0, 0, sizeof(SE_(current_io_vec)->initial_state.register_state),
-   (UChar *)&SE_(current_io_vec)->initial_state.register_state);
+  (target_id, 0, 0,
+   sizeof(SE_(command_server)->current_io_vec->initial_state.register_state),
+   (UChar *)&SE_(command_server)->current_io_vec->initial_state.register_state);
   target_called = True;
 
 #if defined(VGA_amd64)
   VG_(umsg)
   ("About to execute 0x%lx with RDI = 0x%llx\n", VG_(get_IP)(target_id),
-   SE_(current_io_vec)->initial_state.register_state.guest_RDI);
+   SE_(command_server)->current_io_vec->initial_state.register_state.guest_RDI);
 #endif
 }
 
@@ -581,6 +653,29 @@ static void record_current_state(void) {
 }
 
 /**
+ * @brief Returns True if there is 0 or 1 IMark IRStmts between [idx, max)
+ * @param idx
+ * @param max
+ * @param stmts
+ * @return
+ */
+static Bool is_last_IMark(Int idx, Int max, IRStmt **stmts) {
+  tl_assert(stmts);
+
+  Int imark_count = 0;
+  for (Int i = idx; i < max; i++) {
+    IRStmt *stmt = stmts[i];
+    if (stmt->tag == Ist_IMark) {
+      if (++imark_count > 1) {
+        return False;
+      }
+    }
+  }
+
+  return True;
+}
+
+/**
  * @brief Adds calls to record_current_state, and report_success to the input
  * IRSB.
  * @param bb
@@ -606,46 +701,48 @@ static IRSB *SE_(instrument_target)(IRSB *bb) {
     addStmtToIRSB(bbOut, bb->stmts[i]);
   }
 
+  /* When we are getting a valid starting program state, we want to
+   * get the state after the function preamble has executed. So add
+   * the call to jump_to_target_function at the second instruction, not
+   * the first.
+   */
   for (/* use current i */; i < bb->stmts_used; i++) {
     IRStmt *stmt = bb->stmts[i];
-    if (!stmt)
-      continue;
 
-    if (VG_(strcmp)(fnname, target_name) == 0 && i == bb->stmts_used - 1 &&
-        bb->jumpkind == Ijk_Ret) {
-      di = unsafeIRDirty_0_N(
-          0, "report_success_to_commader",
-          VG_(fnptr_to_fnentry)(&SE_(report_success_to_commader)),
-          mkIRExprVec_0());
-      addStmtToIRSB(bbOut, IRStmt_Dirty(di));
-      continue;
-    }
     switch (stmt->tag) {
     case Ist_IMark:
+      addStmtToIRSB(bbOut, stmt);
       if (minAddress == 0 || minAddress > (UWord)stmt->Ist.IMark.addr) {
         minAddress = (UWord)stmt->Ist.IMark.addr;
       }
       if (stmt->Ist.IMark.addr > maxAddress) {
         maxAddress = (UWord)stmt->Ist.IMark.addr;
       }
-      addStmtToIRSB(bbOut, stmt);
       if (stmt->Ist.IMark.addr == SE_(command_server)->target_func_addr) {
         di = unsafeIRDirty_0_N(0, "jump_to_target_function",
                                VG_(fnptr_to_fnentry)(&jump_to_target_function),
                                mkIRExprVec_0());
         addStmtToIRSB(bbOut, IRStmt_Dirty(di));
-      } else {
-        di = unsafeIRDirty_0_N(0, "record_current_state",
-                               VG_(fnptr_to_fnentry)(&record_current_state),
-                               mkIRExprVec_0());
+      } else if (VG_(strcmp)(fnname, target_name) == 0 &&
+                 is_last_IMark(i, bb->stmts_used, bb->stmts) &&
+                 bb->jumpkind == Ijk_Ret) {
+        di = unsafeIRDirty_0_N(
+            0, "maybe_report_success_to_commader",
+            VG_(fnptr_to_fnentry)(&SE_(maybe_report_success_to_commader)),
+            mkIRExprVec_0());
         addStmtToIRSB(bbOut, IRStmt_Dirty(di));
       }
+
+      di = unsafeIRDirty_0_N(0, "record_current_state",
+                             VG_(fnptr_to_fnentry)(&record_current_state),
+                             mkIRExprVec_0());
+      addStmtToIRSB(bbOut, IRStmt_Dirty(di));
       break;
     case Ist_Exit:
       if (VG_(strcmp)(fnname, target_name) == 0 && bb->jumpkind != Ijk_Boring) {
         di = unsafeIRDirty_0_N(
-            0, "report_success_to_commader",
-            VG_(fnptr_to_fnentry)(&SE_(report_success_to_commader)),
+            0, "maybe_report_success_to_commader",
+            VG_(fnptr_to_fnentry)(&SE_(maybe_report_success_to_commader)),
             mkIRExprVec_0());
         addStmtToIRSB(bbOut, IRStmt_Dirty(di));
       } else {
@@ -667,6 +764,9 @@ static IRSB *SE_(instrument_target)(IRSB *bb) {
   VG_(bindRangeMap)(irsb_ranges, minAddress, maxAddress, minAddress);
   //  }
 
+  if (VG_(strcmp)(fnname, target_name) == 0) {
+    ppIRSB(bbOut);
+  }
   return bbOut;
 }
 

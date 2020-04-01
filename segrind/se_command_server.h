@@ -24,8 +24,6 @@
 #define VKI_POLLNVAL 0x0020
 #endif
 
-SE_(io_vec) * SE_(current_io_vec);
-
 typedef enum se_server_state {
   SERVER_INVALID,            /* Error State */
   SERVER_WAIT_FOR_START,     /* Server is initialized and ready to start */
@@ -52,10 +50,11 @@ typedef struct {
   Bool using_existing_io_vec;
   ThreadId executor_tid;
   UInt attempt_count;
+  Addr initial_frame_ptr;
   Addr initial_stack_ptr;
-  Addr current_stack_ptr;
   Bool needs_coverage;
   OSet *coverage;
+  SE_(io_vec) * current_io_vec;
 } SE_(cmd_server);
 
 /**
