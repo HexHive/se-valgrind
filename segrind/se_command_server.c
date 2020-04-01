@@ -234,10 +234,10 @@ static Bool fuzz_program_state(SE_(cmd_server) * server) {
     }
   }
 
-  //  server->current_io_vec->initial_state.register_state.VG_FRAME_PTR =
-  //      server->initial_frame_ptr;
-  //  server->current_io_vec->initial_state.register_state.VG_STACK_PTR =
-  //      server->initial_stack_ptr;
+  server->current_io_vec->initial_state.register_state.VG_FRAME_PTR =
+      server->initial_frame_ptr;
+  server->current_io_vec->initial_state.register_state.VG_STACK_PTR =
+      server->initial_stack_ptr;
 
   return SE_(set_server_state)(server, SERVER_WAITING_TO_EXECUTE);
 }
@@ -324,8 +324,8 @@ static Addr allocate_new_object(SE_(cmd_server) * server, SizeT size) {
   tl_assert(size > 0);
 
   Addr new_alloc_loc;
-  //  new_alloc_loc = server->initial_frame_ptr;
-  //  server->initial_frame_ptr -= size + 2;
+  //    new_alloc_loc = server->initial_frame_ptr;
+  //    server->initial_frame_ptr -= size + 2;
 
   SysRes res =
       VG_(am_mmap_anon_float_client)(size, VKI_PROT_READ | VKI_PROT_WRITE);

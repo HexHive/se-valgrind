@@ -246,10 +246,6 @@ static void fix_address_space() {
       VG_(indexXA)(program_states, VG_(sizeXA)(program_states) - 1);
   Addr faulting_addr = last_state->VG_INSTR_PTR;
 
-  VG_(umsg)
-  ("last_state->STACK_PTR = %p (0x%lx)\n", (void *)last_state->VG_STACK_PTR,
-   *(RegWord *)last_state->VG_STACK_PTR);
-
   VexGuestArchState *current_state;
   VexArch guest_arch;
   VexArchInfo guest_arch_info;
@@ -330,29 +326,12 @@ static void fix_address_space() {
       Word orig_stmt_idx = stmt_idx;
       for (Int i = irsb->stmts_used - 1; i >= 0; i--) {
         IRStmt *stmt = irsb->stmts[i];
-        ppIRStmt(stmt);
-        VG_(printf)("\n");
+        //        ppIRStmt(stmt);
+        //        VG_(printf)("\n");
         Bool taint_found = SE_(taint_found)();
         switch (stmt->tag) {
         case Ist_IMark:
           stmt_idx--;
-          VG_(printf)
-          ("\tStack ptr = %p (0x%lx)\n",
-           (void *)((VexGuestArchState *)VG_(indexXA)(program_states, stmt_idx))
-               ->VG_STACK_PTR,
-           *(RegWord *)((VexGuestArchState *)VG_(indexXA)(program_states,
-                                                          stmt_idx))
-                ->VG_STACK_PTR);
-          VG_(printf)
-          ("\tFrame ptr = %p (0x%lx)\n",
-           (void *)((VexGuestArchState *)VG_(indexXA)(program_states, stmt_idx))
-               ->VG_FRAME_PTR,
-           ((VexGuestArchState *)VG_(indexXA)(program_states, stmt_idx))
-                       ->VG_FRAME_PTR == 0
-               ? 0xdeadbeef
-               : *(RegWord *)((VexGuestArchState *)VG_(indexXA)(program_states,
-                                                                stmt_idx))
-                      ->VG_FRAME_PTR);
           if (!found_faulting_addr && stmt->Ist.IMark.addr == faulting_addr) {
             VG_(printf)("\tFound faulting address %p\n", (void *)faulting_addr);
 
@@ -576,49 +555,17 @@ static void jump_to_target_function(void) {
     VG_(get_shadow_regs_area)
     (target_id, (UChar *)&current_state, 0, 0, sizeof(current_state));
 
-    VG_(umsg)
-    ("Reporting initial state. SP = %p\n", (void *)current_state.VG_STACK_PTR);
     SE_(cmd_msg) *cmd_msg =
         SE_(create_cmd_msg)(SEMSG_OK, sizeof(current_state), &current_state);
     SE_(write_msg_to_fd)(SE_(command_server)->executor_pipe[1], cmd_msg, True);
     SE_(cleanup_and_exit)();
   }
 
-  //  VG_(umsg)
-  //  ("SP = %p (0x%lx)\tFP = %p (0x%lx)\n",
-  //   (void *)SE_(command_server)
-  //       ->current_io_vec->initial_state.register_state.VG_STACK_PTR,
-  //   *(RegWord *)(SE_(command_server)
-  //                    ->current_io_vec->initial_state.register_state
-  //                    .VG_STACK_PTR),
-  //   (void *)SE_(command_server)
-  //       ->current_io_vec->initial_state.register_state.VG_FRAME_PTR,
-  //   *(RegWord *)(SE_(command_server)
-  //                    ->current_io_vec->initial_state.register_state
-  //                    .VG_FRAME_PTR));
-  VG_(umsg)
-  ("SP = %p (0x%lx)\tFP = %p (0x%lx)\n", (void *)VG_(get_SP)(target_id),
-   VG_(get_SP)(target_id) == 0 ? 0xdeadbeef
-                               : *(RegWord *)VG_(get_SP)(target_id),
-   (void *)VG_(get_FP)(target_id),
-   VG_(get_FP)(target_id) == 0 ? 0xdeadbeef
-                               : *(RegWord *)VG_(get_FP)(target_id));
-
-  VG_(umsg)
-  ("Setting program state. SP = %p\n",
-   (void *)SE_(command_server)
-       ->current_io_vec->initial_state.register_state.VG_STACK_PTR);
   VG_(set_shadow_regs_area)
   (target_id, 0, 0,
    sizeof(SE_(command_server)->current_io_vec->initial_state.register_state),
    (UChar *)&SE_(command_server)->current_io_vec->initial_state.register_state);
   target_called = True;
-
-#if defined(VGA_amd64)
-  VG_(umsg)
-  ("About to execute 0x%lx with RDI = 0x%llx\n", VG_(get_IP)(target_id),
-   SE_(command_server)->current_io_vec->initial_state.register_state.guest_RDI);
-#endif
 }
 
 /**
@@ -764,9 +711,6 @@ static IRSB *SE_(instrument_target)(IRSB *bb) {
   VG_(bindRangeMap)(irsb_ranges, minAddress, maxAddress, minAddress);
   //  }
 
-  if (VG_(strcmp)(fnname, target_name) == 0) {
-    ppIRSB(bbOut);
-  }
   return bbOut;
 }
 
