@@ -146,18 +146,15 @@ static Bool handle_set_target_cmd(SE_(cmd_msg) * msg,
   tl_assert(msg->msg_type == SEMSG_SET_TGT);
   tl_assert(server);
 
-  HChar *func_name = (HChar *)msg->data;
+  Addr *func_addr = (Addr *)msg->data;
+  HChar *func_name;
+  VG_(get_fnname)(VG_(current_DiEpoch)(), *func_addr, &func_name);
   tl_assert(VG_(strlen)(func_name) > 0);
 
-  SymAVMAs symAvma;
-  VG_(umsg)("Looking for function %s\n", func_name);
-  if (VG_(lookup_symbol_SLOW)(VG_(current_DiEpoch()), "*", func_name,
-                              &symAvma)) {
-    if (SE_(set_server_state)(server, SERVER_GETTING_INIT_STATE)) {
-      VG_(umsg)("Found %s at 0x%lx\n", func_name, symAvma.main);
-      server->target_func_addr = symAvma.main;
-      return True;
-    }
+  if (SE_(set_server_state)(server, SERVER_GETTING_INIT_STATE)) {
+    VG_(umsg)("Found %s at 0x%lx\n", func_name, *func_addr);
+    server->target_func_addr = *func_addr;
+    return True;
   }
 
   server->target_func_addr = 0;
@@ -583,8 +580,9 @@ static Bool wait_for_child(SE_(cmd_server) * server) {
         server->initial_stack_ptr =
             server->current_io_vec->initial_state.register_state.VG_STACK_PTR;
         server->initial_frame_ptr = server->initial_stack_ptr;
-        VG_(umsg)
-        ("Got initial state FP = %p\n", (void *)server->initial_frame_ptr);
+        //        VG_(umsg)
+        //        ("Got initial state FP = %p\n", (void
+        //        *)server->initial_frame_ptr);
         report_success(server, 0, NULL);
       } else {
         if (cmd_msg->msg_type == SEMSG_OK && server->needs_coverage) {
