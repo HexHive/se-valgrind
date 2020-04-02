@@ -24,6 +24,8 @@
 #define VKI_POLLNVAL 0x0020
 #endif
 
+#define CLIENT_CODE_LOAD_ADDR 0x108000
+
 typedef enum se_server_state {
   SERVER_INVALID,            /* Error State */
   SERVER_WAIT_FOR_START,     /* Server is initialized and ready to start */
