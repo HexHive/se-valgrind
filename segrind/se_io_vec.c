@@ -50,8 +50,8 @@ SizeT SE_(write_io_vec_to_fd)(Int fd, SE_(cmd_msg_t) msg_type,
                               SE_(io_vec) * io_vec) {
   tl_assert(fd > 0);
   tl_assert(io_vec);
-  HChar *data =
-      (HChar *)VG_(malloc)(SE_IOVEC_MALLOC_TYPE, SE_(io_vec_size)(io_vec));
+  SizeT io_vec_size = SE_(io_vec_size)(io_vec);
+  HChar *data = (HChar *)VG_(malloc)(SE_IOVEC_MALLOC_TYPE, io_vec_size);
 
   SizeT bytes_written = 0;
   VG_(memcpy)(data, &io_vec->host_arch, sizeof(io_vec->host_arch));
@@ -77,8 +77,8 @@ SizeT SE_(write_io_vec_to_fd)(Int fd, SE_(cmd_msg_t) msg_type,
 
   SizeT guest_state_size = sizeof(VexGuestArchState);
   VG_(memcpy)
-  (data + bytes_written, &guest_state_size, sizeof(VexGuestArchState));
-  bytes_written += sizeof(VexGuestArchState);
+  (data + bytes_written, &guest_state_size, sizeof(guest_state_size));
+  bytes_written += sizeof(guest_state_size);
 
   VG_(memcpy)
   (data + bytes_written, &io_vec->initial_state.register_state,
