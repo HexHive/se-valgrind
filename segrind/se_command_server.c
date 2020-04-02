@@ -301,6 +301,11 @@ static Bool handle_command(SE_(cmd_server) * server) {
     server->using_existing_io_vec = True;
     server->using_fuzzed_io_vec = False;
     break;
+  case SEMSG_RESET:
+    SE_(reset_server)(server);
+    report_success(server, 0, NULL);
+    msg_handled = True;
+    break;
   default:
     msg_handled = True;
     break;
