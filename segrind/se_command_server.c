@@ -147,17 +147,44 @@ static Bool handle_set_target_cmd(SE_(cmd_msg) * msg,
   tl_assert(server);
 
   Addr *func_addr = (Addr *)msg->data;
+  Int addr_count = 1;
+  Int segment_count;
+  Addr *addrs = NULL;
+  const HChar *func_name;
   VG_(umsg)("Looking for function at 0x%lx\n", *func_addr);
-  HChar *func_name;
-  VG_(get_fnname)(VG_(current_DiEpoch)(), *func_addr, &func_name);
-  tl_assert(VG_(strlen)(func_name) > 0);
+  do {
+    addr_count *= 2;
+    if (addrs) {
+      VG_(free)(addrs);
+    }
+    addrs = (Addr *)VG_(malloc)(SE_TOOL_ALLOC_STR, sizeof(Addr) * addr_count);
+  } while ((segment_count =
+                VG_(am_get_segment_starts)(SkFileC, addrs, addr_count)) < 0);
 
-  if (SE_(set_server_state)(server, SERVER_GETTING_INIT_STATE)) {
+  for (Int i = 0; i < segment_count; i++) {
+    Addr addr = addrs[i];
+    NSegment const *seg = VG_(am_find_nsegment)(addr);
+    if (seg->hasX) {
+      VG_(get_fnname)
+      (VG_(current_DiEpoch)(), seg->start + *func_addr, &func_name);
+      if (VG_(strlen)(func_name) > 0) {
+        break;
+      }
+    }
+  }
+
+  if (addrs) {
+    VG_(free)(addrs);
+  }
+
+  if (VG_(strlen)(func_name) > 0 &&
+      SE_(set_server_state)(server, SERVER_GETTING_INIT_STATE)) {
     VG_(umsg)("Found %s at 0x%lx\n", func_name, *func_addr);
     server->target_func_addr = *func_addr;
     return True;
   }
 
+  VG_(umsg)("Could not find function at 0x%lx\n", *func_addr);
   server->target_func_addr = 0;
   return False;
 }
