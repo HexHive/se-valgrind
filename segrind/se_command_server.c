@@ -182,7 +182,8 @@ static Bool handle_set_target_cmd(SE_(cmd_msg) * msg,
   if (final_addr > 0 &&
       SE_(set_server_state)(server, SERVER_GETTING_INIT_STATE)) {
     VG_(umsg)("Found %s at 0x%lx\n", func_name, final_addr);
-    server->target_func_addr = final_addr return True;
+    server->target_func_addr = final_addr;
+    return True;
   }
 
   VG_(umsg)("Could not find function at 0x%lx\n", *func_addr);
