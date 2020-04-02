@@ -150,6 +150,7 @@ static Bool handle_set_target_cmd(SE_(cmd_msg) * msg,
   Int addr_count = 1;
   Int segment_count;
   Addr *addrs = NULL;
+  Addr final_addr = 0;
   const HChar *func_name;
   VG_(umsg)("Looking for function at 0x%lx\n", *func_addr);
   do {
@@ -168,6 +169,7 @@ static Bool handle_set_target_cmd(SE_(cmd_msg) * msg,
       VG_(get_fnname)
       (VG_(current_DiEpoch)(), seg->start + *func_addr, &func_name);
       if (VG_(strlen)(func_name) > 0) {
+        final_addr = seg->start + *func_addr;
         break;
       }
     }
@@ -177,11 +179,10 @@ static Bool handle_set_target_cmd(SE_(cmd_msg) * msg,
     VG_(free)(addrs);
   }
 
-  if (VG_(strlen)(func_name) > 0 &&
+  if (final_addr > 0 &&
       SE_(set_server_state)(server, SERVER_GETTING_INIT_STATE)) {
-    VG_(umsg)("Found %s at 0x%lx\n", func_name, *func_addr);
-    server->target_func_addr = *func_addr;
-    return True;
+    VG_(umsg)("Found %s at 0x%lx\n", func_name, final_addr);
+    server->target_func_addr = final_addr return True;
   }
 
   VG_(umsg)("Could not find function at 0x%lx\n", *func_addr);
