@@ -147,6 +147,7 @@ static Bool handle_set_target_cmd(SE_(cmd_msg) * msg,
   tl_assert(server);
 
   Addr *func_addr = (Addr *)msg->data;
+  VG_(umsg)("Looking for function at 0x%lx\n", *func_addr);
   HChar *func_name;
   VG_(get_fnname)(VG_(current_DiEpoch)(), *func_addr, &func_name);
   tl_assert(VG_(strlen)(func_name) > 0);
