@@ -158,7 +158,7 @@ static void SE_(send_fuzzed_io_vec)(void) {
    sizeof(SE_(command_server)->current_io_vec->expected_state.register_state));
 
   tl_assert(SE_(write_io_vec_to_cmd_server)(SE_(command_server)->current_io_vec,
-                                            True) > 0);
+                                            False) > 0);
 }
 
 /**
@@ -175,14 +175,17 @@ static void SE_(cleanup_and_exit)(void) {
     VG_(deleteXA)(program_states);
     program_states = NULL;
   }
+
   if (syscalls) {
     VG_(OSetWord_Destroy)(syscalls);
     syscalls = NULL;
   }
+
   if (target_name) {
     VG_(free)(target_name);
     target_name = NULL;
   }
+
   if (irsb_ranges) {
     VG_(deleteRangeMap)(irsb_ranges);
     irsb_ranges = NULL;
@@ -664,6 +667,13 @@ static IRDirty *make_call_to_report_success() {
       VG_(fnptr_to_fnentry)(&SE_(maybe_report_success_to_commader)),
       mkIRExprVec_0());
 
+  di->nFxState = 1;
+  di->fxState[0].fx = Ifx_Read;
+  di->fxState[0].offset = 0;
+  di->fxState[0].size = sizeof(VexGuestArchState);
+  di->fxState[0].nRepeats = 0;
+  di->fxState[0].repeatLen = 0;
+
   return di;
 }
 
@@ -746,9 +756,9 @@ static IRSB *SE_(instrument_target)(IRSB *bb) {
   VG_(bindRangeMap)(irsb_ranges, minAddress, maxAddress, minAddress);
   //  }
 
-  if (VG_(strcmp)(fnname, target_name) == 0) {
-    ppIRSB(bbOut);
-  }
+  //  if (VG_(strcmp)(fnname, target_name) == 0) {
+  //    ppIRSB(bbOut);
+  //  }
   return bbOut;
 }
 
