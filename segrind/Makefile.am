@@ -18,7 +18,8 @@ segrind_SOURCES_COMMON = \
 	se_command_server.c \
 	se_io_vec.c \
 	se_taint.c \
-	se_utils.c
+	se_utils.c \
+	se_fuzz.c
 
 segrind_@VGCONF_ARCH_PRI@_@VGCONF_OS@_SOURCES      = \
 	$(segrind_SOURCES_COMMON)

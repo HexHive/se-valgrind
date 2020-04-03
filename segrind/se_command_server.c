@@ -3,6 +3,7 @@
 //
 
 #include "se_command_server.h"
+#include "se_fuzz.h"
 #include "se_taint.h"
 
 #include "pub_tool_guest.h"
@@ -172,19 +173,19 @@ static Bool handle_set_target_cmd(SE_(cmd_msg) * msg,
   return False;
 }
 
-/**
- * @brief Fuzzes the region specified
- * @param seed
- * @param start
- * @param end
- */
-static void fuzz_region(UInt *seed, Addr start, Addr end) {
-  tl_assert(start <= end);
-
-  /* TODO: Implement a better fuzzing strategy */
-  //  VG_(umsg)("Fuzzing [%p - %p]\n", (void *)start, (void *)end);
-  VG_(memset)((void *)start, VG_(random)(seed), end - start);
-}
+///**
+// * @brief Fuzzes the region specified
+// * @param seed
+// * @param start
+// * @param end
+// */
+// static void fuzz_region(UInt *seed, Addr start, Addr end) {
+//  tl_assert(start <= end);
+//
+//  /* TODO: Implement a better fuzzing strategy */
+//  //  VG_(umsg)("Fuzzing [%p - %p]\n", (void *)start, (void *)end);
+//  VG_(memset)((void *)start, VG_(random)(seed), end - start);
+//}
 
 /**
  * @brief Fuzzes and sets the guest program state
@@ -220,7 +221,7 @@ static Bool fuzz_program_state(SE_(cmd_server) * server) {
     }
 
     if (in_obj && val != ALLOCATED_SUBPTR_MAGIC) {
-      fuzz_region(&SE_(seed), key_min, key_max);
+      SE_(fuzz_region)(&SE_(seed), key_min, key_max);
     }
   }
 
@@ -231,13 +232,11 @@ static Bool fuzz_program_state(SE_(cmd_server) * server) {
     RegWord reg_val = *(
         RegWord *)(&server->current_io_vec->register_state_map[current_offset]);
     if (reg_val != ALLOCATED_SUBPTR_MAGIC) {
-      fuzz_region(
-          &SE_(seed),
-          (Addr)(
-              (UChar *)&server->current_io_vec->initial_state.register_state +
+      SE_(fuzz_region)
+      (&SE_(seed),
+       (Addr)((UChar *)&server->current_io_vec->initial_state.register_state +
               current_offset),
-          (Addr)(
-              (UChar *)&server->current_io_vec->initial_state.register_state +
+       (Addr)((UChar *)&server->current_io_vec->initial_state.register_state +
               current_offset + sizeof(RegWord) - 1));
     }
   }
@@ -458,11 +457,6 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
       *(RegWord *)(&server->current_io_vec
                         ->register_state_map[tainted_loc.location.offset]) =
           ALLOCATED_SUBPTR_MAGIC;
-#if defined(VGA_amd64)
-      VG_(umsg)
-      ("RDI = 0x%llx\n",
-       server->current_io_vec->initial_state.register_state.guest_RDI);
-#endif
       break;
     case taint_addr:
       if (!lookup_obj(server, tainted_loc.location.addr)) {
