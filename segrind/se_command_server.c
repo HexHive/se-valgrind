@@ -153,8 +153,15 @@ static Bool handle_set_target_cmd(SE_(cmd_msg) * msg,
   final_addr = CLIENT_CODE_LOAD_ADDR + *func_addr;
 
   VG_(get_fnname)
-      (VG_(current_DiEpoch)(), final_addr, &func_name);
-  if (SE_(set_server_state)(server, SERVER_GETTING_INIT_STATE)) {
+  (VG_(current_DiEpoch)(), final_addr, &func_name);
+  if (VG_(strlen)(func_name) == 0) {
+    final_addr = *func_addr;
+    VG_(get_fnname)
+    (VG_(current_DiEpoch)(), final_addr, &func_name);
+  }
+
+  if (VG_(strlen)(func_name) > 0 &&
+      SE_(set_server_state)(server, SERVER_GETTING_INIT_STATE)) {
     VG_(umsg)("Found %s at 0x%lx\n", func_name, final_addr);
     server->target_func_addr = final_addr;
     return True;
