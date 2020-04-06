@@ -55,7 +55,7 @@ static char rand_char(UInt *seed) {
  * @return True on success, False otherwise
  */
 static Bool Mutate_ShuffleBytes(UInt *seed, UChar *Data, SizeT Size) {
-  VG_(umsg)("Mutate_ShuffleBytes\n");
+  //  VG_(umsg)("Mutate_ShuffleBytes\n");
   if (Size <= 0) {
     return False;
   }
@@ -63,7 +63,7 @@ static Bool Mutate_ShuffleBytes(UInt *seed, UChar *Data, SizeT Size) {
   UInt size = ((Size <= 8) ? (UInt)Size : (UInt)8);
   UInt ShuffleAmount = rand_uint(seed, size) + 1; // [1,8] and <= Size.
   UInt ShuffleStart = rand_uint(seed, Size - ShuffleAmount);
-  VG_(umsg)("\tShuffling %u bytes from %u\n", ShuffleAmount, ShuffleStart);
+  //  VG_(umsg)("\tShuffling %u bytes from %u\n", ShuffleAmount, ShuffleStart);
   if (ShuffleStart + ShuffleAmount >= Size) {
     return False;
   }
@@ -81,7 +81,7 @@ static Bool Mutate_ShuffleBytes(UInt *seed, UChar *Data, SizeT Size) {
 }
 
 static Bool Mutate_ChangeByte(UInt *seed, UChar *Data, SizeT Size) {
-  VG_(umsg)("Mutate_ChangeByte\n");
+  //  VG_(umsg)("Mutate_ChangeByte\n");
   if (Size <= 0)
     return False;
   UInt Idx = rand_uint(seed, Size);
@@ -90,7 +90,7 @@ static Bool Mutate_ChangeByte(UInt *seed, UChar *Data, SizeT Size) {
 }
 
 static Bool Mutate_ChangeBit(UInt *seed, UChar *Data, SizeT Size) {
-  VG_(umsg)("Mutate_ChangeBit\n");
+  //  VG_(umsg)("Mutate_ChangeBit\n");
   if (Size <= 0)
     return False;
   UInt Idx = rand_uint(seed, Size);
@@ -99,7 +99,7 @@ static Bool Mutate_ChangeBit(UInt *seed, UChar *Data, SizeT Size) {
 }
 
 static Bool Mutate_ChangeASCIIInteger(UInt *seed, UChar *Data, SizeT Size) {
-  VG_(umsg)("Mutate_ChangeASCIIInteger\n");
+  //  VG_(umsg)("Mutate_ChangeASCIIInteger\n");
   if (Size <= 0)
     return False;
   UInt B = rand_uint(seed, Size);
@@ -150,7 +150,7 @@ static Bool Mutate_ChangeASCIIInteger(UInt *seed, UChar *Data, SizeT Size) {
 }
 
 static Bool ChangeBinaryInteger(UInt *seed, UChar *Data, SizeT Size) {
-  VG_(umsg)("ChangeBinaryInteger\n");
+  //  VG_(umsg)("ChangeBinaryInteger\n");
   UInt byte_width = rand_uint(seed, 4);
   switch (byte_width) {
   case 0:
@@ -208,8 +208,8 @@ void SE_(fuzz_region)(UInt *seed, Addr start, Addr end) {
   UInt idx;
   do {
     idx = rand_uint(seed, sizeof(funcs) / sizeof(void *));
-    VG_(umsg)
-    ("Fuzzing [%p - %p] (%lu bytes) using function %u\n", (void *)start,
-     (void *)end, end - start + 1, idx);
+    //    VG_(umsg)
+    //    ("Fuzzing [%p - %p] (%lu bytes) using function %u\n", (void *)start,
+    //     (void *)end, end - start + 1, idx);
   } while (!(*funcs[idx])(seed, (UChar *)start, end - start + 1));
 }
