@@ -459,6 +459,13 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
           ALLOCATED_SUBPTR_MAGIC;
       break;
     case taint_addr:
+      if (!VG_(am_is_valid_for_client)(tainted_loc.location.addr, 1,
+                                       VKI_PROT_NONE)) {
+        VG_(printf)
+        ("Address %p is not valid for the client\n",
+         (void *)tainted_loc.location.addr);
+        return False;
+      }
       if (!lookup_obj(server, tainted_loc.location.addr)) {
         obj_loc = allocate_new_object(server, SE_DEFAULT_ALLOC_SPACE);
         if (!obj_loc) {

@@ -17,7 +17,7 @@
  * @return
  */
 static Bool rand_bool(UInt *seed) {
-  UInt i = VG_(random)(seed);
+  UInt i = VG_(random)(seed) + 1;
   return (i % 2 == 0);
 }
 
@@ -27,7 +27,12 @@ static Bool rand_bool(UInt *seed) {
  * @param max
  * @return
  */
-static UInt rand_uint(UInt *seed, UInt max) { return VG_(random)(seed) % max; }
+static UInt rand_uint(UInt *seed, UInt max) {
+  if (max == 0) {
+    return 0;
+  }
+  return VG_(random)(seed) % max;
+}
 
 /**
  * @brief Returns a random char biased towards some specific "special" chars
@@ -57,10 +62,12 @@ static Bool Mutate_ShuffleBytes(UInt *seed, UChar *Data, SizeT Size) {
 
   UInt size = ((Size <= 8) ? (UInt)Size : (UInt)8);
   UInt ShuffleAmount = rand_uint(seed, size) + 1; // [1,8] and <= Size.
-  UInt ShuffleStart = (SizeT)rand_uint(seed, Size - ShuffleAmount);
+  UInt ShuffleStart = rand_uint(seed, Size - ShuffleAmount);
+  VG_(umsg)("\tShuffling %u bytes from %u\n", ShuffleAmount, ShuffleStart);
   if (ShuffleStart + ShuffleAmount >= Size) {
     return False;
   }
+
   UChar *start = Data + ShuffleStart;
   UChar *orig = VG_(malloc)(SE_TOOL_ALLOC_STR, ShuffleAmount);
   VG_(memcpy)(orig, start, ShuffleAmount);

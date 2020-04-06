@@ -90,7 +90,7 @@ static Int recursive_target_call_count = 0;
 
 static void SE_(report_failure_to_commander)(void);
 static void fix_address_space(void);
-static IRDirty *make_call_to_record_current_state(void);
+static IRDirty *make_call_to_record_current_state(Addr, IRType);
 static IRDirty *make_call_to_jump_to_target(void);
 static IRDirty *make_call_to_report_success(void);
 
@@ -291,10 +291,9 @@ static void fix_address_space() {
       ("Could not find IRSB bounds at 0x%lx (%s)!\n", inst_addr, func_name);
       SE_(report_failure_to_commander)();
     }
-    //    VG_(umsg)
-    //    ("Found IRSB range [0x%lx - 0x%lx] for instruction 0x%lx\n",
-    //    irsb_start,
-    //     irsb_end, inst_addr);
+    VG_(umsg)
+    ("Found IRSB range [0x%lx - 0x%lx] for instruction 0x%lx\n", irsb_start,
+     irsb_end, inst_addr);
 
     if (!irsb || irsb_start != get_IRSB_start(irsb)) {
       //      VG_(umsg)
@@ -332,8 +331,8 @@ static void fix_address_space() {
       Word orig_stmt_idx = stmt_idx;
       for (Int i = irsb->stmts_used - 1; i >= 0; i--) {
         IRStmt *stmt = irsb->stmts[i];
-        //        ppIRStmt(stmt);
-        //        VG_(printf)("\n");
+        ppIRStmt(stmt);
+        VG_(printf)("\n");
         Bool taint_found = SE_(taint_found)();
         switch (stmt->tag) {
         case Ist_IMark:
@@ -541,23 +540,38 @@ static void SE_(thread_exit)(ThreadId tid) {}
  * @brief Records the current guest state if the client is running, main is
  * replaced, and the target has been called.
  */
-static void record_current_state(void) {
+static void record_current_state(Addr addr) {
+  //  const HChar *fnname;
+  //  VG_(get_fnname)(VG_(current_DiEpoch)(), VG_(get_IP)(target_id), &fnname);
+  //  VG_(umsg)
+  //      ("Executing 0x%lx (%s)\n", VG_(get_IP)(target_id), fnname);
   if (client_running && main_replaced && target_called) {
-    //    VG_(umsg)("Recording state for 0x%lx\n", VG_(get_IP)(target_id));
     VexGuestArchState current_state;
     VG_(get_shadow_regs_area)
     (target_id, (UChar *)&current_state, 0, 0, sizeof(current_state));
+
+    /* Sometimes the instruction pointer is not updated when this function
+     * is called, so trust the address passed into this function over the
+     * recorded IP */
+    current_state.VG_INSTR_PTR = addr;
+
+    const HChar *fnname;
+    VG_(get_fnname)
+    (VG_(current_DiEpoch)(), current_state.VG_INSTR_PTR, &fnname);
+    VG_(umsg)
+    ("Recording state for 0x%lx (%s)\n", current_state.VG_INSTR_PTR, fnname);
+
     VG_(addToXA)(program_states, &current_state);
-    //    VG_(printf)
-    //    ("\tSP = %p (0x%lx)\n", (void *)current_state.VG_STACK_PTR,
-    //     current_state.VG_STACK_PTR == 0 ? 0xdeadbeef
-    //                                     : *(RegWord
-    //                                     *)current_state.VG_STACK_PTR);
-    //    VG_(printf)
-    //    ("\tFP = %p (0x%lx)\n", (void *)current_state.VG_FRAME_PTR,
-    //     current_state.VG_FRAME_PTR == 0 ? 0xdeadbeef
-    //                                     : *(RegWord
-    //                                     *)current_state.VG_FRAME_PTR);
+    //        VG_(printf)
+    //        ("\tSP = %p (0x%lx)\n", (void *)current_state.VG_STACK_PTR,
+    //         current_state.VG_STACK_PTR == 0 ? 0xdeadbeef
+    //                                         : *(RegWord
+    //                                         *)current_state.VG_STACK_PTR);
+    //        VG_(printf)
+    //        ("\tFP = %p (0x%lx)\n", (void *)current_state.VG_FRAME_PTR,
+    //         current_state.VG_FRAME_PTR == 0 ? 0xdeadbeef
+    //                                         : *(RegWord
+    //                                         *)current_state.VG_FRAME_PTR);
   }
 }
 
@@ -570,6 +584,11 @@ static void jump_to_target_function(void) {
 
   if (target_called) {
     recursive_target_call_count++;
+    Addr current_addr;
+    VG_(get_shadow_regs_area)
+    (target_id, (UChar *)&current_addr, 0, VG_O_INSTR_PTR,
+     sizeof(current_addr));
+    record_current_state(current_addr);
     return;
   }
 
@@ -589,7 +608,7 @@ static void jump_to_target_function(void) {
    sizeof(SE_(command_server)->current_io_vec->initial_state.register_state),
    (UChar *)&SE_(command_server)->current_io_vec->initial_state.register_state);
   target_called = True;
-  record_current_state();
+  record_current_state(SE_(command_server)->target_func_addr);
 }
 
 /**
@@ -632,10 +651,22 @@ static Bool is_last_IMark(Int idx, Int max, IRStmt **stmts) {
   return True;
 }
 
-static IRDirty *make_call_to_record_current_state() {
+static IRDirty *make_call_to_record_current_state(Addr addr, IRType hWordType) {
+  IRConst *irConst;
+
+  if (hWordType == Ity_I32) {
+    irConst = IRConst_U32((UInt)addr);
+  } else if (hWordType == Ity_I64) {
+    irConst = IRConst_U64((ULong)addr);
+  } else {
+    tl_assert2(0, "Invalid host word type: %d\n", hWordType);
+  }
+
+  IRExpr *irExpr = IRExpr_Const(irConst);
+
   IRDirty *di = unsafeIRDirty_0_N(0, "record_current_state",
                                   VG_(fnptr_to_fnentry)(&record_current_state),
-                                  mkIRExprVec_0());
+                                  mkIRExprVec_1(irExpr));
   di->nFxState = 1;
   di->fxState[0].fx = Ifx_Read;
   di->fxState[0].offset = 0;
@@ -685,7 +716,7 @@ static IRDirty *make_call_to_report_success() {
  * @param bb
  * @return Instrumented IRSB
  */
-static IRSB *SE_(instrument_target)(IRSB *bb) {
+static IRSB *SE_(instrument_target)(IRSB *bb, IRType gWordType) {
   tl_assert(client_running);
   tl_assert(main_replaced);
 
@@ -694,6 +725,7 @@ static IRSB *SE_(instrument_target)(IRSB *bb) {
   IRDirty *di;
   UWord minAddress = 0;
   UWord maxAddress = 0;
+  Addr current_address = 0;
 
   bbOut = deepCopyIRSBExceptStmts(bb);
 
@@ -715,6 +747,7 @@ static IRSB *SE_(instrument_target)(IRSB *bb) {
 
     switch (stmt->tag) {
     case Ist_IMark:
+      current_address = stmt->Ist.IMark.addr;
       addStmtToIRSB(bbOut, stmt);
       if (minAddress == 0 || minAddress > (UWord)stmt->Ist.IMark.addr) {
         minAddress = (UWord)stmt->Ist.IMark.addr;
@@ -731,7 +764,7 @@ static IRSB *SE_(instrument_target)(IRSB *bb) {
         di = make_call_to_report_success();
         addStmtToIRSB(bbOut, IRStmt_Dirty(di));
       } else {
-        di = make_call_to_record_current_state();
+        di = make_call_to_record_current_state(current_address, gWordType);
         addStmtToIRSB(bbOut, IRStmt_Dirty(di));
       }
       break;
@@ -752,9 +785,9 @@ static IRSB *SE_(instrument_target)(IRSB *bb) {
   //  UWord keyMin, keyMax, val;
   //  VG_(lookupRangeMap)(&keyMin, &keyMax, &val, irsb_ranges, minAddress);
   //  if (val == 0) {
-  //    VG_(umsg)
-  //    ("Creating irsb range [%p - %p]\n", (void *)minAddress, (void
-  //    *)maxAddress);
+  //      VG_(umsg)
+  //      ("Creating irsb range [%p - %p]\n", (void *)minAddress, (void
+  //      *)maxAddress);
   VG_(bindRangeMap)(irsb_ranges, minAddress, maxAddress, minAddress);
   //  }
 
@@ -827,7 +860,8 @@ static IRSB *SE_(instrument)(VgCallbackClosure *closure, IRSB *bb,
   IRSB *bbOut = bb;
 
   if (client_running && main_replaced) {
-    bbOut = SE_(instrument_target)(bb);
+    bbOut = SE_(instrument_target)(bb, gWordTy);
+    ppIRSB(bbOut);
   } else if (client_running && !main_replaced && !target_called) {
     bbOut = SE_(replace_main_reference)(bb);
   }
