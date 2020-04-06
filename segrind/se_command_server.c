@@ -173,20 +173,6 @@ static Bool handle_set_target_cmd(SE_(cmd_msg) * msg,
   return False;
 }
 
-///**
-// * @brief Fuzzes the region specified
-// * @param seed
-// * @param start
-// * @param end
-// */
-// static void fuzz_region(UInt *seed, Addr start, Addr end) {
-//  tl_assert(start <= end);
-//
-//  /* TODO: Implement a better fuzzing strategy */
-//  //  VG_(umsg)("Fuzzing [%p - %p]\n", (void *)start, (void *)end);
-//  VG_(memset)((void *)start, VG_(random)(seed), end - start);
-//}
-
 /**
  * @brief Fuzzes and sets the guest program state
  * @param server
@@ -212,16 +198,19 @@ static Bool fuzz_program_state(SE_(cmd_server) * server) {
     (&key_min, &key_max, &val,
      server->current_io_vec->initial_state.address_state, i);
 
-    if (val == OBJ_START_MAGIC) {
+    //    VG_(umsg)("\t[0x%lx - 0x%lx] = %lu\n", key_min, key_max, val);
+
+    if (val & OBJ_START_MAGIC) {
       in_obj = True;
-      continue;
-    } else if (val == OBJ_END_MAGIC) {
-      in_obj = False;
-      continue;
     }
 
-    if (in_obj && val != ALLOCATED_SUBPTR_MAGIC) {
+    if (in_obj && !(val & ALLOCATED_SUBPTR_MAGIC)) {
       SE_(fuzz_region)(&SE_(seed), key_min, key_max);
+    }
+
+    if (val & OBJ_END_MAGIC) {
+      in_obj = False;
+      continue;
     }
   }
 
@@ -330,22 +319,26 @@ static Bool handle_command(SE_(cmd_server) * server) {
  * @brief Allocates space for a new object and returns the address
  * @param server
  * @param size
+ * @param location of object if known
  * @return NULL on error
  */
-static Addr allocate_new_object(SE_(cmd_server) * server, SizeT size) {
+static Addr allocate_new_object(SE_(cmd_server) * server, SizeT size,
+                                Addr location) {
   tl_assert(size > 0);
 
   Addr new_alloc_loc;
-  //    new_alloc_loc = server->initial_frame_ptr;
-  //    server->initial_frame_ptr -= size + 2;
 
-  SysRes res =
-      VG_(am_mmap_anon_float_client)(size, VKI_PROT_READ | VKI_PROT_WRITE);
-  if (sr_isError(res)) {
-    return 0;
+  if (!location) {
+    SysRes res =
+        VG_(am_mmap_anon_float_client)(size, VKI_PROT_READ | VKI_PROT_WRITE);
+    if (sr_isError(res)) {
+      return 0;
+    }
+
+    new_alloc_loc = (Addr)sr_Res(res);
+  } else {
+    new_alloc_loc = location;
   }
-
-  new_alloc_loc = (Addr)sr_Res(res);
 
   /* Mark the start and end points of the object */
   VG_(bindRangeMap)
@@ -441,8 +434,7 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
         return False;
       }
 
-      /* A new object needs to be allocated on the stack */
-      obj_loc = allocate_new_object(server, SE_DEFAULT_ALLOC_SPACE);
+      obj_loc = allocate_new_object(server, SE_DEFAULT_ALLOC_SPACE, (Addr)NULL);
       if (!obj_loc) {
         VG_(umsg)("Failed to allocate new object\n");
         return False;
@@ -467,15 +459,31 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
         return False;
       }
       if (!lookup_obj(server, tainted_loc.location.addr)) {
-        obj_loc = allocate_new_object(server, SE_DEFAULT_ALLOC_SPACE);
+        if (!VG_(am_is_valid_for_client)(tainted_loc.location.addr,
+                                         SE_DEFAULT_ALLOC_SPACE,
+                                         VKI_PROT_READ | VKI_PROT_WRITE)) {
+          SysRes res = VG_(am_mmap_anon_fixed_client)(
+              VG_PGROUNDDN(tainted_loc.location.addr), SE_DEFAULT_ALLOC_SPACE,
+              VKI_PROT_READ | VKI_PROT_WRITE);
+          if (sr_isError(res)) {
+            VG_(umsg)
+            ("Failed to memory map location %p: %lu\n",
+             (void *)VG_PGROUNDDN((void *)tainted_loc.location.addr),
+             sr_Err(res));
+            return False;
+          }
+        }
+
+        obj_loc = allocate_new_object(server, SE_DEFAULT_ALLOC_SPACE,
+                                      tainted_loc.location.addr);
         if (!obj_loc) {
           VG_(umsg)("Failed to allocate object\n");
           return False;
         }
         VG_(umsg)
-        ("Setting %p = %p\n", (void *)tainted_loc.location.addr,
-         (void *)obj_loc);
-        *(Addr *)(tainted_loc.location.addr) = obj_loc;
+        ("Registered %p as an object\n", (void *)tainted_loc.location.addr);
+
+        //        *(Addr *)(tainted_loc.location.addr) = obj_loc;
       } else {
         /* TODO: Implement substructure pointer and object resizing */
         VG_(umsg)

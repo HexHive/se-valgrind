@@ -295,9 +295,10 @@ static void fix_address_space() {
       ("Could not find IRSB bounds at 0x%lx (%s)!\n", inst_addr, func_name);
       SE_(report_failure_to_commander)();
     }
-    VG_(umsg)
-    ("Found IRSB range [0x%lx - 0x%lx] for instruction 0x%lx\n", irsb_start,
-     irsb_end, inst_addr);
+    //    VG_(umsg)
+    //    ("Found IRSB range [0x%lx - 0x%lx] for instruction 0x%lx\n",
+    //    irsb_start,
+    //     irsb_end, inst_addr);
 
     if (!irsb || irsb_start != get_IRSB_start(irsb)) {
       //      VG_(umsg)
@@ -332,8 +333,8 @@ static void fix_address_space() {
       Word orig_stmt_idx = stmt_idx;
       for (Int i = irsb->stmts_used - 1; i >= 0; i--) {
         IRStmt *stmt = irsb->stmts[i];
-        //        ppIRStmt(stmt);
-        //        VG_(printf)("\n");
+        //                ppIRStmt(stmt);
+        //                VG_(printf)("\n");
         Bool taint_found = SE_(taint_found)();
         switch (stmt->tag) {
         case Ist_IMark:
@@ -478,7 +479,7 @@ static void SE_(thread_creation)(ThreadId tid, ThreadId child) {
 
     /* Child executors arrive here */
     VG_(clo_vex_control).iropt_register_updates_default =
-        VexRegUpdAllregsAtEachInsn;
+        VexRegUpdAllregsAtMemAccess;
     if (syscalls) {
       VG_(OSetWord_Destroy)(syscalls);
     }
@@ -567,14 +568,14 @@ static void record_current_state(Addr addr) {
     /* Sometimes the instruction pointer is not updated when this function
      * is called, so trust the address passed into this function over the
      * recorded IP */
-    current_state.VG_INSTR_PTR = addr;
+    //    current_state.VG_INSTR_PTR = addr;
 
-    //    const HChar *fnname;
-    //    VG_(get_fnname)
-    //    (VG_(current_DiEpoch)(), current_state.VG_INSTR_PTR, &fnname);
-    //    VG_(umsg)
-    //    ("Recording state for 0x%lx (%s)\n", current_state.VG_INSTR_PTR,
-    //    fnname);
+    //        const HChar *fnname;
+    //        VG_(get_fnname)
+    //        (VG_(current_DiEpoch)(), current_state.VG_INSTR_PTR, &fnname);
+    //        VG_(umsg)
+    //        ("Recording state for 0x%llx (%s)\n", current_state.VG_INSTR_PTR,
+    //        fnname);
 
     VG_(addToXA)(program_states, &current_state);
 
@@ -908,7 +909,7 @@ static IRSB *SE_(instrument)(VgCallbackClosure *closure, IRSB *bb,
 
   if (client_running && main_replaced) {
     bbOut = SE_(instrument_target)(bb, gWordTy);
-    //    ppIRSB(bbOut);
+    //        ppIRSB(bbOut);
   } else if (client_running && !main_replaced && !target_called) {
     bbOut = SE_(replace_main_reference)(bb);
   }
