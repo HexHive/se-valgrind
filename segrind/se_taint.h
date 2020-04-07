@@ -17,7 +17,8 @@ typedef enum {
   taint_invalid = -1,
   taint_addr, /* A guest memory location */
   taint_reg,  /* A guest register */
-  taint_temp  /* An IRSB temporary */
+  taint_temp, /* An IRSB temporary */
+  taint_stack /* A guest stack location */
 } TaintType;
 
 /**

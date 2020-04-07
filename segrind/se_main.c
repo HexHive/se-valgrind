@@ -29,9 +29,11 @@
 #include "se_io_vec.h"
 #include "se_taint.h"
 #include <libvex_ir.h>
+#include <pub_tool_addrinfo.h>
 
 #include "libvex.h"
 #include "libvex_ir.h"
+#include "pub_tool_addrinfo.h"
 #include "pub_tool_basics.h"
 #include "pub_tool_guest.h"
 #include "pub_tool_libcproc.h"
@@ -333,28 +335,14 @@ static void fix_address_space() {
       Word orig_stmt_idx = stmt_idx;
       for (Int i = irsb->stmts_used - 1; i >= 0; i--) {
         IRStmt *stmt = irsb->stmts[i];
-        //                ppIRStmt(stmt);
-        //                VG_(printf)("\n");
+        ppIRStmt(stmt);
+        VG_(printf)("\n");
         Bool taint_found = SE_(taint_found)();
         switch (stmt->tag) {
         case Ist_IMark:
           stmt_idx--;
-          //          current_state = VG_(indexXA)(program_states, stmt_idx);
-          //          VG_(printf)
-          //          ("\tSP = %p (0x%lx)\n", (void
-          //          *)current_state->VG_STACK_PTR,
-          //           current_state->VG_STACK_PTR == 0
-          //               ? 0xdeadbeef
-          //               : *(RegWord *)current_state->VG_STACK_PTR);
-          //          VG_(printf)
-          //          ("\tFP = %p (0x%lx)\n", (void
-          //          *)current_state->VG_FRAME_PTR,
-          //           current_state->VG_FRAME_PTR == 0
-          //               ? 0xdeadbeef
-          //               : *(RegWord *)current_state->VG_FRAME_PTR);
           if (!found_faulting_addr && stmt->Ist.IMark.addr == faulting_addr) {
-            //            VG_(printf)("\tFound faulting address %p\n", (void
-            //            *)faulting_addr);
+            VG_(printf)("\tFound faulting address %p\n", (void *)faulting_addr);
             found_faulting_addr = True;
           }
           continue;
@@ -380,7 +368,7 @@ static void fix_address_space() {
 
           if (found_faulting_addr) {
             IRExpr *data = stmt->Ist.Put.data;
-            if (!taint_found) {
+            if (!taint_found && data->tag == Iex_Load) {
               SE_(taint_IRExpr)(data, stmt_idx);
             } else if (SE_(guest_reg_tainted)(stmt->Ist.Put.offset) &&
                        !SE_(is_IRExpr_tainted)(data, stmt_idx)) {
@@ -392,20 +380,26 @@ static void fix_address_space() {
         case Ist_WrTmp:
           if (found_faulting_addr) {
             IRExpr *data = stmt->Ist.WrTmp.data;
-            if (SE_(temp_tainted)(stmt->Ist.WrTmp.tmp) &&
-                !SE_(is_IRExpr_tainted)(data, stmt_idx)) {
-              SE_(remove_tainted_temp)(stmt->Ist.WrTmp.tmp);
-              SE_(taint_IRExpr)(data, stmt_idx);
-            } else if (!SE_(temp_tainted)(stmt->Ist.WrTmp.tmp) &&
-                       SE_(is_IRExpr_tainted)(data, stmt_idx)) {
-              /* A temporary has been assigned a tainted value, so
-               * start looking for its use in the IRSB */
-              SE_(remove_IRExpr_taint)(data, stmt_idx);
-              SE_(taint_temp)(stmt->Ist.WrTmp.tmp);
-              //              VG_(printf)("\tRestarting analysis\n");
-              stmt_idx = orig_stmt_idx;
-              i = irsb->stmts_used;
-              found_faulting_addr = !in_first_block;
+            if (!taint_found) {
+              if (data->tag == Iex_Load) {
+                SE_(taint_IRExpr)(data, stmt_idx);
+              }
+            } else {
+              if (SE_(temp_tainted)(stmt->Ist.WrTmp.tmp) &&
+                  !SE_(is_IRExpr_tainted)(data, stmt_idx)) {
+                SE_(remove_tainted_temp)(stmt->Ist.WrTmp.tmp);
+                SE_(taint_IRExpr)(data, stmt_idx);
+              } else if (!SE_(temp_tainted)(stmt->Ist.WrTmp.tmp) &&
+                         SE_(is_IRExpr_tainted)(data, stmt_idx)) {
+                /* A temporary has been assigned a tainted value, so
+                 * start looking for its use in the IRSB */
+                SE_(remove_IRExpr_taint)(data, stmt_idx);
+                SE_(taint_temp)(stmt->Ist.WrTmp.tmp);
+                //              VG_(printf)("\tRestarting analysis\n");
+                stmt_idx = orig_stmt_idx;
+                i = irsb->stmts_used;
+                found_faulting_addr = !in_first_block;
+              }
             }
           }
           continue;
@@ -565,61 +559,14 @@ static void record_current_state(Addr addr) {
     VG_(get_shadow_regs_area)
     (target_id, (UChar *)&current_state, 0, 0, sizeof(current_state));
 
-    /* Sometimes the instruction pointer is not updated when this function
-     * is called, so trust the address passed into this function over the
-     * recorded IP */
-    //    current_state.VG_INSTR_PTR = addr;
-
-    //        const HChar *fnname;
-    //        VG_(get_fnname)
-    //        (VG_(current_DiEpoch)(), current_state.VG_INSTR_PTR, &fnname);
-    //        VG_(umsg)
-    //        ("Recording state for 0x%llx (%s)\n", current_state.VG_INSTR_PTR,
-    //        fnname);
+    const HChar *fnname;
+    VG_(get_fnname)
+    (VG_(current_DiEpoch)(), current_state.VG_INSTR_PTR, &fnname);
+    VG_(umsg)
+    ("Recording state for %p (%s)\n", (void *)current_state.VG_INSTR_PTR,
+     fnname);
 
     VG_(addToXA)(program_states, &current_state);
-
-    //    VG_(printf)
-    //    ("\tSP = %p (0x%lx) %s/%s\n", (void *)current_state.VG_STACK_PTR,
-    //     current_state.VG_STACK_PTR == 0 ? 0xdeadbeef
-    //                                     : *(RegWord
-    //                                     *)current_state.VG_STACK_PTR,
-    //     VG_(am_is_valid_for_client)(current_state.VG_STACK_PTR, 1,
-    //                                 VKI_PROT_READ | VKI_PROT_WRITE)
-    //         ? "O"
-    //         : "X",
-    //     VG_(am_is_valid_for_client)(current_state.VG_STACK_PTR, 1,
-    //                                 VKI_PROT_READ | VKI_PROT_WRITE) &&
-    //             VG_(am_is_valid_for_client)(*(Addr
-    //             *)current_state.VG_STACK_PTR, 1,
-    //                                         VKI_PROT_READ | VKI_PROT_WRITE)
-    //         ? "O"
-    //         : "X");
-    //    VG_(printf)
-    //    ("\tFP = %p (0x%lx) %s/%s\n", (void *)current_state.VG_FRAME_PTR,
-    //     current_state.VG_FRAME_PTR == 0 ? 0xdeadbeef
-    //                                     : *(RegWord
-    //                                     *)current_state.VG_FRAME_PTR,
-    //     VG_(am_is_valid_for_client)(current_state.VG_FRAME_PTR, sizeof(Addr),
-    //                                 VKI_PROT_READ | VKI_PROT_WRITE)
-    //         ? "O"
-    //         : "X",
-    //     VG_(am_is_valid_for_client)(current_state.VG_FRAME_PTR, 1,
-    //                                 VKI_PROT_READ | VKI_PROT_WRITE) &&
-    //             VG_(am_is_valid_for_client)(*(Addr
-    //             *)current_state.VG_FRAME_PTR, sizeof(Addr),
-    //                                         VKI_PROT_READ | VKI_PROT_WRITE)
-    //         ? "O"
-    //         : "X");
-    //    if(addr == 0x124a14) {
-    //      VG_(printf)("\t0x1FFEFFDFF8 %s",
-    //      VG_(am_is_valid_for_client)(0x1FFEFFDFF8, sizeof(Addr),
-    //                                                                        VKI_PROT_READ
-    //                                                                        |
-    //                                                                        VKI_PROT_WRITE)
-    //                                            ? "O"
-    //                                            : "X");
-    //    }
   }
 }
 

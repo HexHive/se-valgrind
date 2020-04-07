@@ -6,6 +6,7 @@
 #include "se_fuzz.h"
 #include "se_taint.h"
 
+#include "pub_tool_addrinfo.h"
 #include "pub_tool_guest.h"
 #include "pub_tool_libcproc.h"
 #include "pub_tool_libcsignal.h"
@@ -361,7 +362,8 @@ static Addr allocate_new_object(SE_(cmd_server) * server, SizeT size,
  * @param addr
  * @return True if the addr is in a previously allocated object
  */
-static Bool lookup_obj(SE_(cmd_server) * server, Addr addr) {
+static Bool lookup_obj(SE_(cmd_server) * server, Addr addr, Addr *obj_start,
+                       Addr *obj_end) {
   tl_assert(server);
   tl_assert(server->current_io_vec);
 
@@ -383,7 +385,13 @@ static Bool lookup_obj(SE_(cmd_server) * server, Addr addr) {
       obj_end_addr = max_addr;
 
       if (addr >= obj_start_addr && addr <= obj_end_addr) {
-        return True;
+        if (obj_start) {
+          *obj_start = obj_start_addr;
+        }
+        if (obj_end) {
+          *obj_end = obj_end_addr;
+        }
+        _ return True;
       }
 
       obj_start_addr = 0;
@@ -391,6 +399,12 @@ static Bool lookup_obj(SE_(cmd_server) * server, Addr addr) {
     }
   }
 
+  if (obj_start) {
+    *obj_start = 0;
+  }
+  if (obj_end) {
+    *obj_end = 0;
+  }
   return False;
 }
 
@@ -434,36 +448,60 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
         return False;
       }
 
-      obj_loc = allocate_new_object(server, SE_DEFAULT_ALLOC_SPACE, (Addr)NULL);
-      if (!obj_loc) {
-        VG_(umsg)("Failed to allocate new object\n");
+      if (*(RegWord
+                *)(&server->current_io_vec
+                        ->register_state_map[tainted_loc.location.offset]) ==
+          OBJ_ALLOCATED_MAGIC) {
+        /* This register has been allocated, so extend the existing object */
+        Addr obj_start, obj_end;
+        if (!lookup_obj)
+          (server,
+           (Addr)server->current_io_vec->initial_state
+               .register_state[tainted_loc.location.offset],
+           &obj_start, &obj_end) {
+            VG_(printf)
+            ("Failed to find expected object allocated to register %d\n",
+             tainted_loc.location.offset);
+            return False;
+          }
+
+        /* TODO: Allocate larger object and free existing object */
+      } else {
+        /* This register hasn't been allocated before */
+        obj_loc =
+            allocate_new_object(server, SE_DEFAULT_ALLOC_SPACE, (Addr)NULL);
+        if (!obj_loc) {
+          VG_(umsg)("Failed to allocate new object\n");
+          return False;
+        }
+        VG_(printf)
+        ("Setting register %d to %p\n", tainted_loc.location.offset,
+         (void *)(obj_loc));
+        *(Addr *)((
+            (UChar *)(&server->current_io_vec->initial_state.register_state) +
+            tainted_loc.location.offset)) = obj_loc;
+
+        *(RegWord *)(&server->current_io_vec
+                          ->register_state_map[tainted_loc.location.offset]) =
+            OBJ_ALLOCATED_MAGIC;
+      }
+      break;
+    case taint_stack:
+      if (!VG_(extend_stack)(server->executor_tid, tainted_loc.location.addr)) {
+        VG_(umsg)
+        ("Failed to extend stack to %p\n", (void *)tainted_loc.location.addr);
         return False;
       }
-      VG_(printf)
-      ("Setting register %d to %p\n", tainted_loc.location.offset,
-       (void *)(obj_loc));
-      *(Addr *)((
-          (UChar *)(&server->current_io_vec->initial_state.register_state) +
-          tainted_loc.location.offset)) = obj_loc;
-
-      *(RegWord *)(&server->current_io_vec
-                        ->register_state_map[tainted_loc.location.offset]) =
-          ALLOCATED_SUBPTR_MAGIC;
+      /* We just needed to adjust the stack, so this attempt doesn't count */
+      server->attempt_count--;
       break;
     case taint_addr:
-      if (!VG_(am_is_valid_for_client)(tainted_loc.location.addr, 1,
-                                       VKI_PROT_NONE)) {
-        VG_(printf)
-        ("Address %p is not valid for the client\n",
-         (void *)tainted_loc.location.addr);
-        return False;
-      }
-      if (!lookup_obj(server, tainted_loc.location.addr)) {
+      if (!lookup_obj(server, tainted_loc.location.addr, 0, 0)) {
         if (!VG_(am_is_valid_for_client)(tainted_loc.location.addr,
                                          SE_DEFAULT_ALLOC_SPACE,
                                          VKI_PROT_READ | VKI_PROT_WRITE)) {
           SysRes res = VG_(am_mmap_anon_fixed_client)(
-              VG_PGROUNDDN(tainted_loc.location.addr), SE_DEFAULT_ALLOC_SPACE,
+              VG_PGROUNDDN(tainted_loc.location.addr), VKI_PAGE_SIZE,
               VKI_PROT_READ | VKI_PROT_WRITE);
           if (sr_isError(res)) {
             VG_(umsg)
@@ -473,7 +511,6 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
             return False;
           }
         }
-
         obj_loc = allocate_new_object(server, SE_DEFAULT_ALLOC_SPACE,
                                       tainted_loc.location.addr);
         if (!obj_loc) {
@@ -482,8 +519,6 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
         }
         VG_(umsg)
         ("Registered %p as an object\n", (void *)tainted_loc.location.addr);
-
-        //        *(Addr *)(tainted_loc.location.addr) = obj_loc;
       } else {
         /* TODO: Implement substructure pointer and object resizing */
         VG_(umsg)
