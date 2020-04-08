@@ -70,22 +70,22 @@ extern void VG_(kill_self)(Int sigNo);
 /* These function synthesize a fault, as if the running instruction
    had had a fault.  These functions do not return - they longjmp back
    into the scheduler so the signal can be delivered. */
-extern void VG_(synth_fault)        (ThreadId tid);
+extern void VG_(synth_fault)(ThreadId tid);
 extern void VG_(synth_fault_mapping)(ThreadId tid, Addr addr);
-extern void VG_(synth_fault_perms)  (ThreadId tid, Addr addr);
-extern void VG_(synth_sigill)       (ThreadId tid, Addr addr);
-extern void VG_(synth_sigtrap)      (ThreadId tid);
-extern void VG_(synth_sigbus)       (ThreadId tid);
-extern void VG_(synth_sigfpe)       (ThreadId tid, UInt code);
+extern void VG_(synth_fault_perms)(ThreadId tid, Addr addr);
+extern void VG_(synth_sigill)(ThreadId tid, Addr addr);
+extern void VG_(synth_sigtrap)(ThreadId tid);
+extern void VG_(synth_sigbus)(ThreadId tid);
+extern void VG_(synth_sigfpe)(ThreadId tid, UInt code);
 
-/* Extend the stack to cover addr, if possible */
-extern Bool VG_(extend_stack)(ThreadId tid, Addr addr);
+///* Extend the stack to cover addr, if possible */
+// extern Bool VG_(extend_stack)(ThreadId tid, Addr addr);
 
 /* Forces the client's signal handler to SIG_DFL - generally just
    before using that signal to kill the process. */
 extern void VG_(set_default_handler)(Int sig);
 
-#endif   // __PUB_CORE_SIGNALS_H
+#endif // __PUB_CORE_SIGNALS_H
 
 /*--------------------------------------------------------------------*/
 /*--- end                                                          ---*/

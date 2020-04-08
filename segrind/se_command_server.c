@@ -391,7 +391,7 @@ static Bool lookup_obj(SE_(cmd_server) * server, Addr addr, Addr *obj_start,
         if (obj_end) {
           *obj_end = obj_end_addr;
         }
-        _ return True;
+        return True;
       }
 
       obj_start_addr = 0;
@@ -448,24 +448,21 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
         return False;
       }
 
-      if (*(RegWord
-                *)(&server->current_io_vec
-                        ->register_state_map[tainted_loc.location.offset]) ==
-          OBJ_ALLOCATED_MAGIC) {
+      RegWord register_value =
+          *(RegWord *)((UChar *)&server->current_io_vec->register_state_map +
+                       tainted_loc.location.offset);
+      if (register_value == OBJ_ALLOCATED_MAGIC) {
         /* This register has been allocated, so extend the existing object */
         Addr obj_start, obj_end;
-        if (!lookup_obj)
-          (server,
-           (Addr)server->current_io_vec->initial_state
-               .register_state[tainted_loc.location.offset],
-           &obj_start, &obj_end) {
-            VG_(printf)
-            ("Failed to find expected object allocated to register %d\n",
-             tainted_loc.location.offset);
-            return False;
-          }
+        if (!lookup_obj(server, (Addr)register_value, &obj_start, &obj_end)) {
+          VG_(printf)
+          ("Failed to find expected object allocated to register %d\n",
+           tainted_loc.location.offset);
+          return False;
+        }
 
         /* TODO: Allocate larger object and free existing object */
+        break;
       } else {
         /* This register hasn't been allocated before */
         obj_loc =

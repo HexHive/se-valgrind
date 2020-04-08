@@ -45,7 +45,10 @@ extern fault_catcher_t VG_(set_fault_catcher)(fault_catcher_t catcher);
 extern void
     VG_(set_call_fault_catcher_in_generated)(Bool should_call_in_generated);
 
-#endif   // __PUB_TOOL_SIGNALS_H
+/* Extend the stack to cover addr, if possible */
+extern Bool VG_(extend_stack)(ThreadId tid, Addr addr);
+
+#endif // __PUB_TOOL_SIGNALS_H
 
 /*--------------------------------------------------------------------*/
 /*--- end                                                          ---*/
