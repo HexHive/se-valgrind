@@ -484,14 +484,21 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
       }
       break;
     case taint_stack:
-      if (!VG_(extend_stack)(server->executor_tid, tainted_loc.location.addr)) {
-        VG_(umsg)
-        ("Failed to extend stack to %p\n", (void *)tainted_loc.location.addr);
-        return False;
+      if (tainted_loc.location.addr < server->min_stack_ptr) {
+        /* The stack needs to be expanded */
+        if (!VG_(extend_stack)(server->executor_tid,
+                               tainted_loc.location.addr)) {
+          VG_(umsg)
+          ("Failed to extend stack to %p\n", (void *)tainted_loc.location.addr);
+          return False;
+        }
+        /* We just needed to adjust the stack, so this attempt doesn't count */
+        server->attempt_count--;
+        server->min_stack_ptr = tainted_loc.location.addr;
+        break;
       }
-      /* We just needed to adjust the stack, so this attempt doesn't count */
-      server->attempt_count--;
-      break;
+      /* TODO: A stack object needs to be resized */
+      /* Purposeful fallthrough */
     case taint_addr:
       if (!lookup_obj(server, tainted_loc.location.addr, 0, 0)) {
         if (!VG_(am_is_valid_for_client)(tainted_loc.location.addr,
@@ -637,9 +644,7 @@ static Bool wait_for_child(SE_(cmd_server) * server) {
         server->initial_stack_ptr =
             server->current_io_vec->initial_state.register_state.VG_STACK_PTR;
         server->initial_frame_ptr = server->initial_stack_ptr;
-        //        VG_(umsg)
-        //        ("Got initial state FP = %p\n", (void
-        //        *)server->initial_frame_ptr);
+        server->min_stack_ptr = server->initial_stack_ptr;
         report_success(server, 0, NULL);
       } else {
         if (cmd_msg->msg_type == SEMSG_OK && server->needs_coverage) {
@@ -967,6 +972,7 @@ void SE_(reset_server)(SE_(cmd_server) * server) {
   server->using_existing_io_vec = False;
   server->attempt_count = 0;
   server->needs_coverage = False;
+  server->min_stack_ptr = -1;
 
   if (server->coverage) {
     VG_(OSetWord_Destroy)(server->coverage);

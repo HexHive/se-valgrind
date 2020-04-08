@@ -187,6 +187,7 @@ void SE_(ppTaintedLocation)(const SE_(tainted_loc) * loc) {
   case taint_addr:
     VG_(printf)
     ("{ address: %p }\n", (void *)loc->location.addr);
+    return;
   case taint_stack:
     VG_(printf)("{ stack: %p }\n", (void *)loc->location.addr);
     return;
