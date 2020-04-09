@@ -219,9 +219,10 @@ static Bool fuzz_program_state(SE_(cmd_server) * server) {
   Int gpr_offsets[] = SE_O_GPRS;
   for (Int i = 0; i < SE_NUM_GPRS; i++) {
     Int current_offset = gpr_offsets[i];
-    RegWord reg_val = *(
-        RegWord *)(&server->current_io_vec->register_state_map[current_offset]);
-    if (reg_val != ALLOCATED_SUBPTR_MAGIC) {
+    RegWord reg_val =
+        *(RegWord *)(&server->current_io_vec
+                          ->initial_register_state_map[current_offset]);
+    if (reg_val != OBJ_ALLOCATED_MAGIC) {
       SE_(fuzz_region)
       (&SE_(seed),
        (Addr)((UChar *)&server->current_io_vec->initial_state.register_state +
@@ -335,10 +336,15 @@ static Addr allocate_new_object(SE_(cmd_server) * server, SizeT size,
     if (sr_isError(res)) {
       return 0;
     }
-
-    new_alloc_loc = (Addr)sr_Res(res);
+    VG_(memset)(&new_alloc_loc, 0, sizeof(new_alloc_loc));
+    Int addr = sr_Res(res);
+    VG_(memcpy)(&new_alloc_loc, &addr, sizeof(addr));
   } else {
     new_alloc_loc = location;
+  }
+
+  if (!new_alloc_loc) {
+    return (Addr)NULL;
   }
 
   /* Mark the start and end points of the object */
@@ -357,6 +363,108 @@ static Addr allocate_new_object(SE_(cmd_server) * server, SizeT size,
 }
 
 /**
+ * @brief Reallocates an object, and puts the new bounds in the pointers
+ * @param server
+ * @param new_size
+ * @param obj_start
+ * @param obj_end
+ * @param new_start
+ * @param new_end
+ * @return
+ */
+static Bool reallocate_obj(SE_(cmd_server) * server, SizeT new_size,
+                           Addr obj_start, Addr obj_end, Addr *new_start,
+                           Addr *new_end) {
+  tl_assert(server);
+  tl_assert(new_start);
+  tl_assert(new_end);
+  tl_assert(new_size > 0);
+  tl_assert(obj_start < obj_end);
+
+  SizeT current_size = obj_end - obj_start;
+  if (new_size <= current_size) {
+    *new_start = obj_start;
+    *new_end = obj_end;
+    return True;
+  }
+
+  Addr new_addr = allocate_new_object(server, new_size, (Addr)NULL);
+  if (!new_addr) {
+    return False;
+  }
+
+  /* Copy existing mapping to new object */
+  UWord min_addr, max_addr, val;
+  for (Int i = 0; i < current_size; i++) {
+    VG_(lookupRangeMap)
+    (&min_addr, &max_addr, &val,
+     server->current_io_vec->initial_state.address_state, obj_start + i);
+
+    tl_assert(val & OBJ_ALLOCATED_MAGIC);
+
+    // Ensure that the end bit is never set
+    if (val & OBJ_END_MAGIC) {
+      val ^= OBJ_END_MAGIC;
+    }
+
+    VG_(bindRangeMap)
+    (server->current_io_vec->initial_state.address_state, new_addr + i,
+     new_addr + i, val);
+
+    /* Copy over any pointers */
+    if (val & ALLOCATED_SUBPTR_MAGIC) {
+      VG_(memcpy)
+      ((void *)(new_addr + i), (void *)(obj_start + i), sizeof(char));
+    }
+  }
+
+  VG_(bindRangeMap)
+  (server->current_io_vec->initial_state.address_state, obj_start, obj_end, 0);
+
+  *new_start = new_addr;
+  *new_end = new_addr + new_size;
+  return True;
+}
+
+/**
+ * @brief Writes ptr_val to the offset, and registers the region covered by the
+ * pointer as containing a pointer
+ * @param server
+ * @param obj_start
+ * @param obj_end
+ * @param submember_offset
+ * @param ptr_val
+ */
+static void set_pointer_submember(SE_(cmd_server) * server, Addr obj_start,
+                                  Addr obj_end, SizeT submember_offset,
+                                  Addr ptr_val) {
+  tl_assert(server);
+  tl_assert(obj_start);
+  tl_assert(submember_offset >= 0);
+  tl_assert(obj_end - obj_start >= sizeof(Addr));
+
+  UWord min_addr, max_addr, val;
+  Addr pointer_start = obj_start + submember_offset;
+  for (Int i = 0; i < sizeof(Addr); i++) {
+    VG_(lookupRangeMap)
+    (&min_addr, &max_addr, &val,
+     server->current_io_vec->initial_state.address_state, pointer_start + i);
+
+    tl_assert(val & OBJ_ALLOCATED_MAGIC);
+
+    if (!(val ^ ALLOCATED_SUBPTR_MAGIC)) {
+      val ^= ALLOCATED_SUBPTR_MAGIC;
+    }
+
+    VG_(bindRangeMap)
+    (server->current_io_vec->initial_state.address_state, pointer_start + i,
+     pointer_start + i, val);
+  }
+
+  VG_(memcpy)((void *)pointer_start, &ptr_val, sizeof(Addr));
+}
+
+/**
  * @brief Looks up if addr is in a previously allocated object
  * @param server
  * @param addr
@@ -366,6 +474,8 @@ static Bool lookup_obj(SE_(cmd_server) * server, Addr addr, Addr *obj_start,
                        Addr *obj_end) {
   tl_assert(server);
   tl_assert(server->current_io_vec);
+
+  VG_(printf)("Trying to find %p\n", (void *)addr);
 
   UInt size =
       VG_(sizeRangeMap)(server->current_io_vec->initial_state.address_state);
@@ -377,7 +487,10 @@ static Bool lookup_obj(SE_(cmd_server) * server, Addr addr, Addr *obj_start,
     (&min_addr, &max_addr, &val,
      server->current_io_vec->initial_state.address_state, i);
 
-    val ^= (OBJ_ALLOCATED_MAGIC | ALLOCATED_SUBPTR_MAGIC);
+    val ^= OBJ_ALLOCATED_MAGIC;
+    if (val & ALLOCATED_SUBPTR_MAGIC) {
+      val ^= ALLOCATED_SUBPTR_MAGIC;
+    }
 
     if ((val ^ OBJ_START_MAGIC) == 0) {
       obj_start_addr = min_addr;
@@ -423,19 +536,31 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
   tl_assert(server->using_fuzzed_io_vec);
   tl_assert(new_alloc_msg->data);
 
-  Word count;
-  Addr obj_loc;
+  Word count, i;
+  Addr obj_loc = 0;
+  Word bytes_read = 0;
 
+  SE_(tainted_loc) invalid_addr;
   SE_(tainted_loc) tainted_loc;
+  VG_(memcpy)
+  (&invalid_addr, (UChar *)new_alloc_msg->data + bytes_read,
+   sizeof(tainted_loc));
+  bytes_read += sizeof(tainted_loc);
+
+  if (invalid_addr.type != taint_addr) {
+    VG_(umsg)("Invalid tainted address\n");
+    return False;
+  }
+
   VG_(memcpy)(&count, new_alloc_msg->data, sizeof(Word));
-  Word bytes_read = sizeof(Word);
-  for (Word i = 0; i < count; i++) {
+  bytes_read += sizeof(Word);
+  for (i = 0; i < count; i++) {
     VG_(memcpy)
     (&tainted_loc, (UChar *)new_alloc_msg->data + bytes_read,
      sizeof(tainted_loc));
     bytes_read += sizeof(tainted_loc);
 
-    VG_(printf)("Received ");
+    VG_(umsg)("Received ");
     SE_(ppTaintedLocation)(&tainted_loc);
 
     switch (tainted_loc.type) {
@@ -449,19 +574,50 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
       }
 
       RegWord register_value =
-          *(RegWord *)((UChar *)&server->current_io_vec->register_state_map +
+          *(RegWord *)(server->current_io_vec->initial_register_state_map +
                        tainted_loc.location.offset);
       if (register_value == OBJ_ALLOCATED_MAGIC) {
         /* This register has been allocated, so extend the existing object */
         Addr obj_start, obj_end;
-        if (!lookup_obj(server, (Addr)register_value, &obj_start, &obj_end)) {
-          VG_(printf)
+        VG_(memcpy)
+        ((void *)&obj_loc,
+         (UChar *)&server->current_io_vec->initial_state.register_state +
+             tainted_loc.location.offset,
+         sizeof(obj_loc));
+
+        if (!lookup_obj(server, obj_loc, &obj_start, &obj_end)) {
+          VG_(umsg)
           ("Failed to find expected object allocated to register %d\n",
            tainted_loc.location.offset);
           return False;
         }
 
-        /* TODO: Allocate larger object and free existing object */
+        /* Allocate larger object and free existing object if needed, and
+         * set sub-member as a pointer */
+        SizeT ptr_member_offset = invalid_addr.location.addr - obj_start;
+        SizeT needed_size = ptr_member_offset + sizeof(Addr);
+        if (!reallocate_obj(server, needed_size, obj_start, obj_end, &obj_start,
+                            &obj_end)) {
+          VG_(printf)
+          ("Could not reallocate object for register %d\n",
+           tainted_loc.location.offset);
+          return False;
+        }
+
+        Addr submember =
+            allocate_new_object(server, SE_DEFAULT_ALLOC_SPACE, (Addr)NULL);
+        if (!submember) {
+          VG_(umsg)("Could not allocate submember object\n");
+          return False;
+        }
+
+        set_pointer_submember(server, obj_start, obj_end, ptr_member_offset,
+                              submember);
+
+        VG_(memcpy)
+        ((UChar *)&server->current_io_vec->initial_state.register_state +
+             tainted_loc.location.offset,
+         &obj_start, sizeof(obj_start));
         break;
       } else {
         /* This register hasn't been allocated before */
@@ -474,13 +630,13 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
         VG_(printf)
         ("Setting register %d to %p\n", tainted_loc.location.offset,
          (void *)(obj_loc));
-        *(Addr *)((
-            (UChar *)(&server->current_io_vec->initial_state.register_state) +
-            tainted_loc.location.offset)) = obj_loc;
+        VG_(memcpy)
+        ((UChar *)&server->current_io_vec->initial_state.register_state +
+             tainted_loc.location.offset,
+         &obj_loc, sizeof(obj_loc));
 
-        *(RegWord *)(&server->current_io_vec
-                          ->register_state_map[tainted_loc.location.offset]) =
-            OBJ_ALLOCATED_MAGIC;
+        *(RegWord *)(&server->current_io_vec->initial_register_state_map
+                          [tainted_loc.location.offset]) = OBJ_ALLOCATED_MAGIC;
       }
       break;
     case taint_stack:

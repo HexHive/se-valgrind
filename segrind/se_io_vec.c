@@ -12,6 +12,7 @@ const HChar *SE_IOVEC_MALLOC_TYPE = "SE_(io_vec)";
 SE_(io_vec) * SE_(create_io_vec)(void) {
   SE_(io_vec) *io_vec =
       (SE_(io_vec) *)VG_(malloc)(SE_IOVEC_MALLOC_TYPE, sizeof(SE_(io_vec)));
+  VG_(memset)(io_vec, 0, sizeof(SE_(io_vec)));
 
   VexArchInfo arch_info;
   VG_(machine_get_VexArchInfo)(&io_vec->host_arch, &arch_info);
@@ -27,13 +28,13 @@ SE_(io_vec) * SE_(create_io_vec)(void) {
       VG_(newRangeMap)(VG_(malloc), SE_IOVEC_MALLOC_TYPE, VG_(free), 0);
 
   Int offset = VG_O_STACK_PTR;
-  *(Addr *)(&io_vec->register_state_map[offset]) = ALLOCATED_SUBPTR_MAGIC;
+  *(Addr *)(&io_vec->initial_register_state_map[offset]) = OBJ_ALLOCATED_MAGIC;
 
   offset = VG_O_INSTR_PTR;
-  *(Addr *)(&io_vec->register_state_map[offset]) = ALLOCATED_SUBPTR_MAGIC;
+  *(Addr *)(&io_vec->initial_register_state_map[offset]) = OBJ_ALLOCATED_MAGIC;
 
   offset = VG_O_FRAME_PTR;
-  *(Addr *)(&io_vec->register_state_map[offset]) = ALLOCATED_SUBPTR_MAGIC;
+  *(Addr *)(&io_vec->initial_register_state_map[offset]) = OBJ_ALLOCATED_MAGIC;
 
   return io_vec;
 }
@@ -121,7 +122,8 @@ SizeT SE_(write_io_vec_to_fd)(Int fd, SE_(cmd_msg_t) msg_type,
   }
 
   VG_(memcpy)
-  (data + bytes_written, io_vec->register_state_map, sizeof(VexGuestArchState));
+  (data + bytes_written, io_vec->initial_register_state_map,
+   sizeof(VexGuestArchState));
   bytes_written += sizeof(VexGuestArchState);
 
   VG_(OSetWord_ResetIter)(io_vec->system_calls);

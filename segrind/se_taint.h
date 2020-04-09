@@ -136,4 +136,17 @@ void SE_(remove_tainted_temp)(IRTemp tmp);
  */
 void SE_(clear_temps)(void);
 
+/**
+ * @brief Returns True if the IRExpr contains an Iex_Load
+ * @param irExpr
+ * @return
+ */
+Bool SE_(IRExpr_contains_load)(const IRExpr *irExpr);
+
+/**
+ * @brief Returns the first tainted address location, or NULL if there isn't any
+ * @return
+ */
+const SE_(tainted_loc) * SE_(get_tainted_address)(void);
+
 #endif // SE_VALGRIND_SE_TAINT_H

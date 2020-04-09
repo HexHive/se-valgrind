@@ -297,10 +297,9 @@ static void fix_address_space() {
       ("Could not find IRSB bounds at 0x%lx (%s)!\n", inst_addr, func_name);
       SE_(report_failure_to_commander)();
     }
-    //    VG_(umsg)
-    //    ("Found IRSB range [0x%lx - 0x%lx] for instruction 0x%lx\n",
-    //    irsb_start,
-    //     irsb_end, inst_addr);
+    VG_(umsg)
+    ("Found IRSB range [0x%lx - 0x%lx] for instruction 0x%lx\n", irsb_start,
+     irsb_end, inst_addr);
 
     if (!irsb || irsb_start != get_IRSB_start(irsb)) {
       //      VG_(umsg)
@@ -335,14 +334,15 @@ static void fix_address_space() {
       Word orig_stmt_idx = stmt_idx;
       for (Int i = irsb->stmts_used - 1; i >= 0; i--) {
         IRStmt *stmt = irsb->stmts[i];
-        //        ppIRStmt(stmt);
-        //        VG_(printf)("\n");
+        ppIRStmt(stmt);
+        VG_(printf)("\n");
         Bool taint_found = SE_(taint_found)();
         switch (stmt->tag) {
         case Ist_IMark:
           stmt_idx--;
           if (!found_faulting_addr && stmt->Ist.IMark.addr == faulting_addr) {
-            VG_(printf)("\tFound faulting address %p\n", (void *)faulting_addr);
+            //            VG_(printf)("\tFound faulting address %p\n", (void
+            //            *)faulting_addr);
             found_faulting_addr = True;
           }
           continue;
@@ -368,8 +368,10 @@ static void fix_address_space() {
 
           if (found_faulting_addr) {
             IRExpr *data = stmt->Ist.Put.data;
-            if (!taint_found && data->tag == Iex_Load) {
-              SE_(taint_IRExpr)(data, stmt_idx);
+            if (!taint_found) {
+              if (SE_(IRExpr_contains_load)(data)) {
+                SE_(taint_IRExpr)(data, stmt_idx);
+              }
             } else if (SE_(guest_reg_tainted)(stmt->Ist.Put.offset) &&
                        !SE_(is_IRExpr_tainted)(data, stmt_idx)) {
               SE_(remove_tainted_reg)(stmt->Ist.Put.offset);
@@ -381,7 +383,7 @@ static void fix_address_space() {
           if (found_faulting_addr) {
             IRExpr *data = stmt->Ist.WrTmp.data;
             if (!taint_found) {
-              if (data->tag == Iex_Load) {
+              if (SE_(IRExpr_contains_load)(data)) {
                 SE_(taint_IRExpr)(data, stmt_idx);
               }
             } else {
@@ -418,20 +420,25 @@ static void fix_address_space() {
   Word num_areas = VG_(OSetGen_Size)(tainted_locations);
   tl_assert(num_areas > 0);
 
-  UChar *buf =
-      VG_(malloc)(SE_TOOL_ALLOC_STR,
-                  sizeof(num_areas) + num_areas * sizeof(SE_(tainted_loc)));
+  SizeT buf_size =
+      sizeof(num_areas) + (num_areas + 1) * sizeof(SE_(tainted_loc));
+  UChar *buf = VG_(malloc)(SE_TOOL_ALLOC_STR, buf_size);
+  Word offset = 0;
+  VG_(memcpy)
+  (buf + offset, SE_(get_tainted_address)(), sizeof(SE_(tainted_loc)));
+  offset += sizeof(SE_(tainted_loc));
   VG_(memcpy)(buf, &num_areas, sizeof(num_areas));
-  Word offset = sizeof(num_areas);
+  offset = sizeof(num_areas);
   SE_(tainted_loc) * loc;
   while ((loc = VG_(OSetGen_Next)(tainted_locations))) {
     VG_(memcpy)(buf + offset, loc, sizeof(*loc));
     offset += sizeof(*loc);
   }
 
-  SE_(cmd_msg) *msg = SE_(create_cmd_msg)(
-      SEMSG_NEW_ALLOC, sizeof(num_areas) + num_areas * sizeof(SE_(tainted_loc)),
-      buf);
+  //  VG_(umsg)("Tainted address %p\n",
+  //  (void*)SE_(get_tainted_address)()->location.addr);
+
+  SE_(cmd_msg) *msg = SE_(create_cmd_msg)(SEMSG_NEW_ALLOC, buf_size, buf);
 
   SE_(write_msg_to_fd)(SE_(command_server)->executor_pipe[1], msg, True);
 
@@ -444,6 +451,9 @@ static void fix_address_space() {
  * @param addr
  */
 static void SE_(signal_handler)(Int sigNo, Addr addr) {
+  VG_(umsg)
+  ("Signal handler called with signal %s and addr = %p\n", VG_(signame)(sigNo),
+   (void *)addr);
   if (client_running && target_called) {
     if (sigNo == VKI_SIGSEGV && SE_(command_server)->using_fuzzed_io_vec) {
       fix_address_space();
@@ -559,12 +569,17 @@ static void record_current_state(Addr addr) {
     VG_(get_shadow_regs_area)
     (target_id, (UChar *)&current_state, 0, 0, sizeof(current_state));
 
-    //    const HChar *fnname;
-    //    VG_(get_fnname)
-    //    (VG_(current_DiEpoch)(), current_state.VG_INSTR_PTR, &fnname);
-    //    VG_(umsg)
-    //    ("Recording state for %p (%s)\n", (void *)current_state.VG_INSTR_PTR,
-    //     fnname);
+    const HChar *fnname;
+    VG_(get_fnname)
+    (VG_(current_DiEpoch)(), current_state.VG_INSTR_PTR, &fnname);
+    VG_(umsg)
+    ("Recording state for %p/%p (%s)\n", (void *)current_state.VG_INSTR_PTR,
+     (void *)addr, fnname);
+    if (addr >= 0x1298B0) {
+      VG_(umsg)("*%p = %llx\n", (void *)0x1FFF000460, *(ULong *)0x1FFF000460);
+    }
+
+    current_state.VG_INSTR_PTR = addr;
 
     VG_(addToXA)(program_states, &current_state);
   }
@@ -744,13 +759,13 @@ static IRSB *SE_(instrument_target)(IRSB *bb, IRType gWordType) {
     case Ist_IMark:
       current_address = stmt->Ist.IMark.addr;
       addStmtToIRSB(bbOut, stmt);
-      if (minAddress == 0 || minAddress > (UWord)stmt->Ist.IMark.addr) {
-        minAddress = (UWord)stmt->Ist.IMark.addr;
+      if (minAddress == 0 || minAddress > (UWord)current_address) {
+        minAddress = (UWord)current_address;
       }
-      if (stmt->Ist.IMark.addr > maxAddress) {
-        maxAddress = (UWord)stmt->Ist.IMark.addr;
+      if (current_address > maxAddress) {
+        maxAddress = (UWord)current_address;
       }
-      if (stmt->Ist.IMark.addr == SE_(command_server)->target_func_addr) {
+      if (current_address == SE_(command_server)->target_func_addr) {
         di = make_call_to_jump_to_target();
         addStmtToIRSB(bbOut, IRStmt_Dirty(di));
       } else if (VG_(strcmp)(fnname, target_name) == 0 &&
@@ -777,14 +792,14 @@ static IRSB *SE_(instrument_target)(IRSB *bb, IRType gWordType) {
     }
   }
 
-  //  UWord keyMin, keyMax, val;
-  //  VG_(lookupRangeMap)(&keyMin, &keyMax, &val, irsb_ranges, minAddress);
-  //  if (val == 0) {
-  //      VG_(umsg)
-  //      ("Creating irsb range [%p - %p]\n", (void *)minAddress, (void
-  //      *)maxAddress);
-  VG_(bindRangeMap)(irsb_ranges, minAddress, maxAddress, minAddress);
-  //  }
+  UWord keyMin, keyMax, val;
+  VG_(lookupRangeMap)(&keyMin, &keyMax, &val, irsb_ranges, minAddress);
+  if (val == 0 || minAddress < keyMin || maxAddress > keyMax) {
+    //    VG_(umsg)
+    //    ("Creating irsb range [%p - %p]\n", (void *)minAddress, (void
+    //    *)maxAddress);
+    VG_(bindRangeMap)(irsb_ranges, minAddress, maxAddress, minAddress);
+  }
 
   //  if (VG_(strcmp)(fnname, target_name) == 0) {
   //    ppIRSB(bbOut);

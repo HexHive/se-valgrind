@@ -48,6 +48,9 @@ extern void
 /* Extend the stack to cover addr, if possible */
 extern Bool VG_(extend_stack)(ThreadId tid, Addr addr);
 
+/* Returns the name of the vki signal sigNo */
+extern const HChar *VG_(signame)(Int sigNo);
+
 #endif // __PUB_TOOL_SIGNALS_H
 
 /*--------------------------------------------------------------------*/

@@ -13,6 +13,9 @@
 static XArray *program_states_;
 static OSet *tainted_locations_;
 
+static SE_(tainted_loc) tainted_address;
+static Int taint_count;
+
 /**
  * @brief Adjusts the tainted location address based on the operation
  * @param irExpr
@@ -35,9 +38,11 @@ static void adjust_tainted_location(const IRExpr *irExpr,
     tl_assert(0);
   }
 
-  //  VG_(printf)
-  //  ("\tAdjusting address %p in response to IRExpr ", (void
-  //  *)loc->location.addr); ppIRExpr(irExpr); VG_(printf)("\n");
+  VG_(printf)
+  ("\tAdjusting address %p (= 0x%llx) in response to IRExpr ",
+   (void *)loc->location.addr, *(ULong *)loc->location.addr);
+  ppIRExpr(irExpr);
+  VG_(printf)("\n");
 
   switch (op) {
   case Iop_Add8:
@@ -113,14 +118,7 @@ static SE_(tainted_loc) *
       result->location.addr = guest_state->VG_FRAME_PTR;
       //      VG_(printf)("\tprogram_states_[%ld]->VG_FRAME_PTR = %p\n", idx,
       //      (void*)guest_state->VG_FRAME_PTR);
-    } /*else if (irExpr->Iex.Get.offset == VG_O_STACK_PTR) {
-      guest_state = VG_(indexXA)(program_states_, idx);
-      result->type = taint_addr;
-      result->location.addr = guest_state->VG_STACK_PTR;
-      //      VG_(printf)("\tprogram_states_[%ld]->VG_STACK_PTR = %p\n", idx,
-      //      (void*)guest_state->VG_FRAME_PTR);
-    }*/
-    else {
+    } else {
       result->type = taint_reg;
       result->location.offset = irExpr->Iex.Get.offset;
     }
@@ -237,6 +235,10 @@ void SE_(init_taint_analysis)(XArray *program_states) {
   program_states_ = program_states;
   tainted_locations_ = VG_(OSetGen_Create)(0, SE_(taint_cmp), VG_(malloc),
                                            SE_TOOL_ALLOC_STR, VG_(free));
+
+  tainted_address.type = taint_invalid;
+  tainted_address.location.addr = 0;
+  taint_count = 0;
 }
 
 void SE_(end_taint_analysis)(void) {
@@ -327,8 +329,37 @@ void SE_(taint_IRExpr)(IRExpr *irExpr, Word idx) {
   }
 
   if (!VG_(OSetGen_Contains)(tainted_locations_, loc)) {
+    if (loc->type == taint_addr || loc->type == taint_reg) {
+      taint_count++;
+    }
     VG_(printf)("\tTainting ");
     SE_(ppTaintedLocation)(loc);
+    /* The first tainted location is the faulting instruction,
+     * the second tainted location is the load of the invalid address, and
+     * the third tainted location is where the invalid address came from,
+     * which is what we are interested in finding.
+     */
+    if (taint_count == 3 && tainted_address.type == taint_invalid &&
+        (loc->type == taint_addr || loc->type == taint_reg)) {
+      tainted_address.type = taint_addr;
+      switch (loc->type) {
+      case taint_addr:
+        tainted_address.location.addr = loc->location.addr;
+        break;
+      case taint_reg:
+        tainted_address.location.addr =
+            *(Addr *)((UChar *)VG_(indexXA)(program_states_, idx) +
+                      loc->location.offset);
+        break;
+      default:
+        tl_assert(0);
+      }
+      adjust_tainted_location(irExpr, &tainted_address);
+      //      VG_(printf)
+      //      ("\ttainted_address.addr = %p\n", (void
+      //      *)tainted_address.location.addr);
+    }
+
     VG_(OSetGen_Insert)(tainted_locations_, loc);
   }
 
@@ -422,3 +453,46 @@ void SE_(clear_temps)(void) {
     }
   }
 }
+
+Bool SE_(IRExpr_contains_load)(const IRExpr *irExpr) {
+  tl_assert(irExpr);
+  Bool result;
+
+  switch (irExpr->tag) {
+  case Iex_RdTmp:
+  case Iex_Get:
+  case Iex_Const:
+  case Iex_CCall:
+    result = False;
+    break;
+  case Iex_Load:
+    result = True;
+    break;
+  case Iex_Unop:
+    result = SE_(IRExpr_contains_load)(irExpr->Iex.Unop.arg);
+    break;
+  case Iex_Binop:
+    result = SE_(IRExpr_contains_load)(irExpr->Iex.Binop.arg1) ||
+             SE_(IRExpr_contains_load)(irExpr->Iex.Binop.arg2);
+    break;
+  case Iex_Triop:
+    result = SE_(IRExpr_contains_load)(irExpr->Iex.Triop.details->arg1) ||
+             SE_(IRExpr_contains_load)(irExpr->Iex.Triop.details->arg2) ||
+             SE_(IRExpr_contains_load)(irExpr->Iex.Triop.details->arg3);
+    break;
+  case Iex_Qop:
+    result = SE_(IRExpr_contains_load)(irExpr->Iex.Qop.details->arg1) ||
+             SE_(IRExpr_contains_load)(irExpr->Iex.Qop.details->arg2) ||
+             SE_(IRExpr_contains_load)(irExpr->Iex.Qop.details->arg3) ||
+             SE_(IRExpr_contains_load)(irExpr->Iex.Qop.details->arg4);
+    break;
+  default:
+    VG_(umsg)("Invalid get_IRExpr expression: \n");
+    ppIRExpr(irExpr);
+    tl_assert(0);
+  }
+
+  return result;
+}
+
+const SE_(tainted_loc) * SE_(get_tainted_address)() { return &tainted_address; }

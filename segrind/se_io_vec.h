@@ -34,7 +34,7 @@ typedef struct io_vec {
   SE_(program_state) expected_state; /* State expected post-execution */
 
   /* Maps which parts of the register states are pointers */
-  UChar register_state_map[sizeof(VexGuestArchState)];
+  UChar initial_register_state_map[sizeof(VexGuestArchState)];
 
   OSet *system_calls; /* Unique set of system calls executed */
 } SE_(io_vec);
