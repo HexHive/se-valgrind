@@ -38,11 +38,11 @@ static void adjust_tainted_location(const IRExpr *irExpr,
     tl_assert(0);
   }
 
-  VG_(printf)
-  ("\tAdjusting address %p (= 0x%llx) in response to IRExpr ",
-   (void *)loc->location.addr, *(ULong *)loc->location.addr);
-  ppIRExpr(irExpr);
-  VG_(printf)("\n");
+  //  VG_(printf)
+  //  ("\tAdjusting address %p (= 0x%llx) in response to IRExpr ",
+  //   (void *)loc->location.addr, *(ULong *)loc->location.addr);
+  //  ppIRExpr(irExpr);
+  //  VG_(printf)("\n");
 
   switch (op) {
   case Iop_Add8:
@@ -190,8 +190,10 @@ void SE_(ppTaintedLocation)(const SE_(tainted_loc) * loc) {
     VG_(printf)("{ stack: %p }\n", (void *)loc->location.addr);
     return;
   case taint_invalid:
+    VG_(printf)("{ invalid taint }\n");
+    return;
   default:
-    tl_assert(0);
+    tl_assert2(0, "Unknown taint type: %d\n", loc->type);
   }
 }
 
@@ -239,12 +241,14 @@ void SE_(init_taint_analysis)(XArray *program_states) {
   tainted_address.type = taint_invalid;
   tainted_address.location.addr = 0;
   taint_count = 0;
+  VG_(umsg)("Taint analysis beginning!\n");
 }
 
 void SE_(end_taint_analysis)(void) {
   if (tainted_locations_) {
     VG_(OSetGen_Destroy)(tainted_locations_);
   }
+  VG_(umsg)("Taint analysis complete\n");
 }
 
 IRExpr *SE_(get_IRExpr)(IRExpr *expr) {
@@ -355,9 +359,8 @@ void SE_(taint_IRExpr)(IRExpr *irExpr, Word idx) {
         tl_assert(0);
       }
       adjust_tainted_location(irExpr, &tainted_address);
-      //      VG_(printf)
-      //      ("\ttainted_address.addr = %p\n", (void
-      //      *)tainted_address.location.addr);
+      VG_(printf)
+      ("\ttainted_address.addr = %p\n", (void *)tainted_address.location.addr);
     }
 
     VG_(OSetGen_Insert)(tainted_locations_, loc);

@@ -347,6 +347,8 @@ static Addr allocate_new_object(SE_(cmd_server) * server, SizeT size,
     return (Addr)NULL;
   }
 
+  VG_(umsg)("Allocating %lu bytes at %p\n", size, (void *)new_alloc_loc);
+
   /* Mark the start and end points of the object */
   VG_(bindRangeMap)
   (server->current_io_vec->initial_state.address_state, new_alloc_loc,
@@ -423,6 +425,10 @@ static Bool reallocate_obj(SE_(cmd_server) * server, SizeT new_size,
 
   *new_start = new_addr;
   *new_end = new_addr + new_size;
+
+  VG_(umsg)
+  ("Reallocated object from [%p - %p] to [%p - %p]\n", (void *)obj_start,
+   (void *)obj_end, (void *)*new_start, (void *)*new_end);
   return True;
 }
 
@@ -475,7 +481,7 @@ static Bool lookup_obj(SE_(cmd_server) * server, Addr addr, Addr *obj_start,
   tl_assert(server);
   tl_assert(server->current_io_vec);
 
-  VG_(printf)("Trying to find %p\n", (void *)addr);
+  VG_(umsg)("Trying to find %p\n", (void *)addr);
 
   UInt size =
       VG_(sizeRangeMap)(server->current_io_vec->initial_state.address_state);
@@ -544,15 +550,10 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
   SE_(tainted_loc) tainted_loc;
   VG_(memcpy)
   (&invalid_addr, (UChar *)new_alloc_msg->data + bytes_read,
-   sizeof(tainted_loc));
-  bytes_read += sizeof(tainted_loc);
+   sizeof(SE_(tainted_loc)));
+  bytes_read += sizeof(SE_(tainted_loc));
 
-  if (invalid_addr.type != taint_addr) {
-    VG_(umsg)("Invalid tainted address\n");
-    return False;
-  }
-
-  VG_(memcpy)(&count, new_alloc_msg->data, sizeof(Word));
+  VG_(memcpy)(&count, (UChar *)new_alloc_msg->data + bytes_read, sizeof(Word));
   bytes_read += sizeof(Word);
   for (i = 0; i < count; i++) {
     VG_(memcpy)
@@ -578,6 +579,11 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
                        tainted_loc.location.offset);
       if (register_value == OBJ_ALLOCATED_MAGIC) {
         /* This register has been allocated, so extend the existing object */
+        if (invalid_addr.type != taint_addr) {
+          VG_(umsg)("Invalid tainted address\n");
+          return False;
+        }
+
         Addr obj_start, obj_end;
         VG_(memcpy)
         ((void *)&obj_loc,
