@@ -231,7 +231,7 @@ void SE_(write_io_vec_to_buf)(SE_(io_vec) * io_vec,
   tl_assert(io_vec);
 
   SizeT io_vec_size = SE_(io_vec_size)(io_vec);
-  HChar *data = (HChar *)VG_(malloc)(SE_IOVEC_MALLOC_TYPE, io_vec_size);
+  UChar *data = (UChar *)VG_(malloc)(SE_IOVEC_MALLOC_TYPE, io_vec_size);
 
   /* host_arch */
   SizeT bytes_written = 0;

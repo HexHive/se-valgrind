@@ -166,6 +166,11 @@ static Bool handle_set_target_cmd(SE_(cmd_msg) * msg,
       SE_(set_server_state)(server, SERVER_GETTING_INIT_STATE)) {
     VG_(umsg)("Found %s at 0x%lx\n", func_name, final_addr);
     server->target_func_addr = final_addr;
+    if (server->current_io_vec) {
+      SE_(free_io_vec)(server->current_io_vec);
+    }
+    server->current_io_vec = SE_(create_io_vec)();
+
     return True;
   }
 
@@ -905,14 +910,15 @@ static Bool SE_(fork_and_execute)(SE_(cmd_server) * server) {
         report_error(server, "Invalid server state");
         goto exit;
       }
-    VG_(umsg)
-    ("Server forking %u with status %s\n", server->attempt_count,
-     SE_(server_state_str)(server->current_state));
 
     if (VG_(pipe)(server->executor_pipe) < 0) {
       report_error(server, "Pipe failed");
       goto exit;
     }
+
+    VG_(umsg)
+    ("Server forking %u with status %s\n", server->attempt_count,
+     SE_(server_state_str)(server->current_state));
 
     pid = VG_(fork)();
     if (pid < 0) {
