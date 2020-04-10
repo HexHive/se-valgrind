@@ -336,8 +336,9 @@ void SE_(taint_IRExpr)(IRExpr *irExpr, Word idx) {
     if (loc->type == taint_addr || loc->type == taint_reg) {
       taint_count++;
     }
-    //    VG_(printf)("\tTainting ");
-    //    SE_(ppTaintedLocation)(loc);
+    //        VG_(printf)("\tTainting ");
+    //        SE_(ppTaintedLocation)(loc);
+
     /* The first tainted location is the faulting instruction,
      * the second tainted location is the load of the invalid address, and
      * the third tainted location is where the invalid address came from,
@@ -358,9 +359,17 @@ void SE_(taint_IRExpr)(IRExpr *irExpr, Word idx) {
       default:
         tl_assert(0);
       }
-      adjust_tainted_location(irExpr, &tainted_address);
-      VG_(printf)
-      ("\ttainted_address.addr = %p\n", (void *)tainted_address.location.addr);
+      switch (irExpr->tag) {
+      case Iex_Unop:
+      case Iex_Binop:
+        adjust_tainted_location(irExpr, &tainted_address);
+        break;
+      default:
+        break;
+      }
+      //      VG_(printf)
+      //      ("\ttainted_address.addr = %p\n", (void
+      //      *)tainted_address.location.addr);
     }
 
     VG_(OSetGen_Insert)(tainted_locations_, loc);
@@ -401,7 +410,7 @@ void SE_(remove_tainted_reg)(Int offset) {
   loc.type = taint_reg;
   loc.location.offset = offset;
 
-  //  VG_(printf)("\tRemoving taint from guest offset %d\n", offset);
+  //    VG_(printf)("\tRemoving taint from guest offset %d\n", offset);
 
   void *tmp = VG_(OSetGen_Remove)(tainted_locations_, &loc);
   if (tmp) {
@@ -424,8 +433,8 @@ void SE_(taint_temp)(IRTemp temp) {
   loc->location.temp = temp;
 
   if (!VG_(OSetGen_Contains)(tainted_locations_, loc)) {
-    //    VG_(printf)("\tTainting ");
-    //    SE_(ppTaintedLocation)(loc);
+    //        VG_(printf)("\tTainting ");
+    //        SE_(ppTaintedLocation)(loc);
     VG_(OSetGen_Insert)(tainted_locations_, loc);
   } else {
     VG_(OSetGen_FreeNode)(tainted_locations_, loc);
@@ -437,7 +446,7 @@ void SE_(remove_tainted_temp)(IRTemp temp) {
   loc.type = taint_temp;
   loc.location.offset = temp;
 
-  //  VG_(printf)("\tRemoving taint from temporary %u\n", temp);
+  //    VG_(printf)("\tRemoving taint from temporary %u\n", temp);
 
   void *tmp = VG_(OSetGen_Remove)(tainted_locations_, &loc);
   if (tmp) {

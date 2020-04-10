@@ -675,9 +675,9 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
           VG_(umsg)("Failed to allocate new object\n");
           return False;
         }
-        VG_(printf)
-        ("Setting register %d to %p\n", tainted_loc.location.offset,
-         (void *)(obj_loc));
+        //        VG_(printf)
+        //        ("Setting register %d to %p\n", tainted_loc.location.offset,
+        //         (void *)(obj_loc));
         VG_(memcpy)
         (server->current_io_vec->initial_state.register_state.buf +
              tainted_loc.location.offset,
