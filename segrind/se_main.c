@@ -254,10 +254,6 @@ static Addr get_IRSB_start(IRSB *irsb) {
 static void fix_address_space() {
   tl_assert(VG_(sizeXA)(program_states) > 0);
 
-  VexGuestArchState *last_state =
-      VG_(indexXA)(program_states, VG_(sizeXA)(program_states) - 1);
-  Addr faulting_addr = last_state->VG_INSTR_PTR;
-
   VexGuestArchState *current_state;
   VexArch guest_arch;
   VexArchInfo guest_arch_info;
@@ -267,6 +263,9 @@ static void fix_address_space() {
   IRSB *irsb = NULL;
 
   SE_(init_taint_analysis)(program_states);
+  VexGuestArchState *last_state =
+      VG_(indexXA)(program_states, VG_(sizeXA)(program_states) - 1);
+  Addr faulting_addr = last_state->VG_INSTR_PTR;
 
   VG_(machine_get_VexArchInfo)(&guest_arch, &guest_arch_info);
   LibVEX_default_VexAbiInfo(&abi_info);

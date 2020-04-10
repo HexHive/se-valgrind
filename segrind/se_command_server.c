@@ -344,7 +344,7 @@ static Addr allocate_new_object(SE_(cmd_server) * server, SizeT size,
   }
 
   if (!new_alloc_loc) {
-    return (Addr)NULL;
+    return 0;
   }
 
   VG_(umsg)("Allocating %lu bytes at %p\n", size, (void *)new_alloc_loc);
@@ -422,6 +422,14 @@ static Bool reallocate_obj(SE_(cmd_server) * server, SizeT new_size,
 
   VG_(bindRangeMap)
   (server->current_io_vec->initial_state.address_state, obj_start, obj_end, 0);
+  Bool needs_discard;
+  SysRes res =
+      VG_(am_munmap_client)(&needs_discard, obj_start, obj_end - obj_start);
+  if (sr_isError(res)) {
+    VG_(umsg)
+    ("Failed to unmap [%p -- %p] from client!\n", (void *)obj_start,
+     (void *)obj_end);
+  }
 
   *new_start = new_addr;
   *new_end = new_addr + new_size;
