@@ -162,9 +162,8 @@ static void SE_(send_fuzzed_io_vec)(void) {
   }
   VG_(get_shadow_regs_area)
   (target_id,
-   (UChar *)&SE_(command_server)->current_io_vec->expected_state.register_state,
-   0, 0,
-   sizeof(SE_(command_server)->current_io_vec->expected_state.register_state));
+   SE_(command_server)->current_io_vec->expected_state.register_state.buf, 0, 0,
+   SE_(command_server)->current_io_vec->expected_state.register_state.len);
 
   tl_assert(SE_(write_io_vec_to_cmd_server)(SE_(command_server)->current_io_vec,
                                             False) > 0);
@@ -573,13 +572,12 @@ static void record_current_state(Addr addr) {
     VG_(get_shadow_regs_area)
     (target_id, (UChar *)&current_state, 0, 0, sizeof(current_state));
 
-    //    const HChar *fnname;
-    //    VG_(get_fnname)
-    //    (VG_(current_DiEpoch)(), current_state.VG_INSTR_PTR, &fnname);
-    //    VG_(umsg)
-    //    ("Recording state for %p/%p (%s)\n", (void
-    //    *)current_state.VG_INSTR_PTR,
-    //     (void *)addr, fnname);
+    const HChar *fnname;
+    VG_(get_fnname)
+    (VG_(current_DiEpoch)(), current_state.VG_INSTR_PTR, &fnname);
+    VG_(umsg)
+    ("Recording state for %p/%p (%s)\n", (void *)current_state.VG_INSTR_PTR,
+     (void *)addr, fnname);
 
     current_state.VG_INSTR_PTR = addr;
 
@@ -617,8 +615,8 @@ static void jump_to_target_function(void) {
 
   VG_(set_shadow_regs_area)
   (target_id, 0, 0,
-   sizeof(SE_(command_server)->current_io_vec->initial_state.register_state),
-   (UChar *)&SE_(command_server)->current_io_vec->initial_state.register_state);
+   SE_(command_server)->current_io_vec->initial_state.register_state.len,
+   SE_(command_server)->current_io_vec->initial_state.register_state.buf);
   target_called = True;
   record_current_state(SE_(command_server)->target_func_addr);
 }

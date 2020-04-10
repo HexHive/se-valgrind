@@ -359,9 +359,8 @@ void SE_(taint_IRExpr)(IRExpr *irExpr, Word idx) {
         tl_assert(0);
       }
       adjust_tainted_location(irExpr, &tainted_address);
-      //      VG_(printf)
-      //      ("\ttainted_address.addr = %p\n", (void
-      //      *)tainted_address.location.addr);
+      VG_(printf)
+      ("\ttainted_address.addr = %p\n", (void *)tainted_address.location.addr);
     }
 
     VG_(OSetGen_Insert)(tainted_locations_, loc);
