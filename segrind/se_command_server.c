@@ -833,11 +833,9 @@ static Bool wait_for_child(SE_(cmd_server) * server) {
           goto cleanup;
         }
 
-        if (server->current_io_vec) {
-          SE_(free_io_vec)(server->current_io_vec);
-        }
-        server->current_io_vec =
-            SE_(read_io_vec_from_buf)(cmd_msg->length, cmd_msg->data);
+        VG_(memcpy)
+        (server->current_io_vec->initial_state.register_state.buf,
+         cmd_msg->data, cmd_msg->length);
         SE_(free_msg)(cmd_msg);
         VG_(memcpy)
         (&server->initial_stack_ptr,
