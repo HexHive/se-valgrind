@@ -334,8 +334,8 @@ static void fix_address_space() {
       Word orig_stmt_idx = stmt_idx;
       for (Int i = irsb->stmts_used - 1; i >= 0; i--) {
         IRStmt *stmt = irsb->stmts[i];
-        ppIRStmt(stmt);
-        VG_(printf)("\n");
+        //        ppIRStmt(stmt);
+        //        VG_(printf)("\n");
         Bool taint_found = SE_(taint_found)();
         switch (stmt->tag) {
         case Ist_IMark:
@@ -424,9 +424,9 @@ static void fix_address_space() {
       sizeof(num_areas) + (num_areas + 1) * sizeof(SE_(tainted_loc));
   UChar *buf = VG_(malloc)(SE_TOOL_ALLOC_STR, buf_size);
   Word offset = 0;
-  VG_(printf)("Tainted address ");
-  SE_(ppTaintedLocation)(SE_(get_tainted_address)());
-  VG_(printf)("\n");
+  //  VG_(printf)("Tainted address ");
+  //  SE_(ppTaintedLocation)(SE_(get_tainted_address)());
+  //  VG_(printf)("\n");
 
   VG_(memcpy)
   (buf, SE_(get_tainted_address)(), sizeof(SE_(tainted_loc)));
