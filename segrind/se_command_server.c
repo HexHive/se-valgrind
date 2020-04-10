@@ -823,10 +823,7 @@ static Bool wait_for_child(SE_(cmd_server) * server) {
         if (cmd_msg->msg_type != SEMSG_OK) {
           write_to_commander(server, cmd_msg, True);
           goto cleanup;
-        } else if (cmd_msg->data == NULL ||
-                   cmd_msg->length !=
-                       sizeof(server->current_io_vec->initial_state
-                                  .register_state)) {
+        } else if (cmd_msg->data == NULL) {
           report_error(server, NULL);
           goto cleanup;
         }
@@ -834,10 +831,8 @@ static Bool wait_for_child(SE_(cmd_server) * server) {
         if (server->current_io_vec) {
           SE_(free_io_vec)(server->current_io_vec);
         }
-        server->current_io_vec = SE_(create_io_vec)();
-        VG_(memcpy)
-        ((UChar *)&server->current_io_vec->initial_state.register_state.buf,
-         cmd_msg->data, cmd_msg->length);
+        server->current_io_vec =
+            SE_(read_io_vec_from_buf)(cmd_msg->length, cmd_msg->data);
         SE_(free_msg)(cmd_msg);
         VG_(memcpy)
         (&server->initial_stack_ptr,
