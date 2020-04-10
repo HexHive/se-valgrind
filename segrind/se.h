@@ -36,6 +36,19 @@ UInt SE_(seed);
 
 UInt SE_(MaxAttempts);
 
+typedef enum _memorized_obj_type {
+  se_memo_invalid,
+  se_memo_io_vec,
+  se_memo_oset_word,
+  se_memo_arch_state
+} SE_(memoized_type);
+
+typedef struct memoized_object {
+  UChar *buf;
+  SizeT len;
+  SE_(memoized_type) type;
+} SE_(memoized_object);
+
 /*****************************************************
  * Command line parsing
  *****************************************************/
@@ -51,8 +64,7 @@ void SE_(set_clo_defaults)(void);
  * @brief Copies an OSetWord size and data into allocated memory buffer
  * @param oset
  * @param dest - Where to write the location of the allocated memory buffer
- * @return Size of the allocated buffer
  */
-SizeT SE_(Memoize_OSetWord)(OSet *oset, UChar **dest);
+void SE_(Memoize_OSetWord)(OSet *oset, SE_(memoized_object) * dest);
 
 #endif // FOSBIN_SE_H

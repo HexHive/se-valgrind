@@ -53,14 +53,14 @@ static SizeT write_coverage_to_commander(SE_(cmd_server) * server) {
   tl_assert(server);
   tl_assert(server->coverage);
 
-  UChar *buf;
+  SE_(memoized_object) obj;
 
-  SizeT len = SE_(Memoize_OSetWord)(server->coverage, &buf);
+  SE_(Memoize_OSetWord)(server->coverage, &obj);
 
   /* Avoid copying the data twice */
   SE_(cmd_msg) *cmd_msg = SE_(create_cmd_msg)(SEMSG_COVERAGE, 0, NULL);
-  cmd_msg->data = buf;
-  cmd_msg->length = len;
+  cmd_msg->data = obj.buf;
+  cmd_msg->length = obj.len;
 
   /* This frees buf */
   return write_to_commander(server, cmd_msg, True);
@@ -188,6 +188,8 @@ static Bool fuzz_program_state(SE_(cmd_server) * server) {
 
   server->current_io_vec->random_seed = SE_(seed);
   server->needs_coverage = True;
+  server->using_fuzzed_io_vec = True;
+  server->using_existing_io_vec = False;
 
   /* Fuzz input pointers */
   UInt size =
@@ -220,8 +222,8 @@ static Bool fuzz_program_state(SE_(cmd_server) * server) {
   for (Int i = 0; i < SE_NUM_GPRS; i++) {
     Int current_offset = gpr_offsets[i];
     RegWord reg_val =
-        *(RegWord *)(&server->current_io_vec
-                          ->initial_register_state_map[current_offset]);
+        *(RegWord *)(&server->current_io_vec->initial_register_state_map
+                          .buf[current_offset]);
     if (reg_val != OBJ_ALLOCATED_MAGIC) {
       SE_(fuzz_region)
       (&SE_(seed),
@@ -232,12 +234,38 @@ static Bool fuzz_program_state(SE_(cmd_server) * server) {
     }
   }
 
-  server->current_io_vec->initial_state.register_state.VG_FRAME_PTR =
-      server->initial_frame_ptr;
-  server->current_io_vec->initial_state.register_state.VG_STACK_PTR =
-      server->initial_stack_ptr;
+  VG_(memcpy)
+  (&server->current_io_vec->initial_state.register_state.buf[VG_O_FRAME_PTR],
+   &server->initial_frame_ptr, sizeof(server->initial_frame_ptr));
+  VG_(memcpy)
+  (&server->current_io_vec->initial_state.register_state.buf[VG_O_STACK_PTR],
+   &server->initial_stack_ptr, sizeof(server->initial_stack_ptr));
 
   return SE_(set_server_state)(server, SERVER_WAITING_TO_EXECUTE);
+}
+
+static Bool handle_set_io_vec(SE_(cmd_server) * server,
+                              SE_(cmd_msg) * cmd_msg) {
+  tl_assert(server);
+  tl_assert(cmd_msg);
+  tl_assert(cmd_msg->msg_type == SEMSG_SET_CTX);
+  tl_assert(cmd_msg->length > 0);
+  tl_assert(cmd_msg->data);
+
+  if (!SE_(set_server_state)(server, SERVER_SETTING_CTX)) {
+    return False;
+  }
+
+  if (server->current_io_vec) {
+    SE_(free_io_vec)(server->current_io_vec);
+  }
+  server->current_io_vec =
+      SE_(read_io_vec_from_buf)(cmd_msg->length, (UChar *)cmd_msg->data);
+
+  server->using_existing_io_vec = True;
+  server->using_fuzzed_io_vec = False;
+
+  return SE_(set_server_state)(server, SERVER_WAIT_FOR_CMD);
 }
 
 /**
@@ -270,8 +298,6 @@ static Bool handle_command(SE_(cmd_server) * server) {
   case SEMSG_FUZZ:
     msg_handled = fuzz_program_state(server);
     if (msg_handled) {
-      server->using_fuzzed_io_vec = True;
-      server->using_existing_io_vec = False;
       report_success(server, 0, NULL);
     }
     break;
@@ -294,9 +320,10 @@ static Bool handle_command(SE_(cmd_server) * server) {
     parent_should_fork = True;
     break;
   case SEMSG_SET_CTX:
-    /* TODO: Implement me when IOVecs are ported */
-    server->using_existing_io_vec = True;
-    server->using_fuzzed_io_vec = False;
+    msg_handled = handle_set_io_vec(server, cmd_msg);
+    if (msg_handled) {
+      report_success(server, 0, NULL);
+    }
     break;
   case SEMSG_RESET:
     SE_(reset_server)(server);
@@ -583,7 +610,7 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
       }
 
       RegWord register_value =
-          *(RegWord *)(server->current_io_vec->initial_register_state_map +
+          *(RegWord *)(server->current_io_vec->initial_register_state_map.buf +
                        tainted_loc.location.offset);
       if (register_value == OBJ_ALLOCATED_MAGIC) {
         /* This register has been allocated, so extend the existing object */
@@ -595,7 +622,7 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
         Addr obj_start, obj_end;
         VG_(memcpy)
         ((void *)&obj_loc,
-         (UChar *)&server->current_io_vec->initial_state.register_state +
+         (UChar *)&server->current_io_vec->initial_state.register_state.buf +
              tainted_loc.location.offset,
          sizeof(obj_loc));
 
@@ -645,12 +672,13 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
         ("Setting register %d to %p\n", tainted_loc.location.offset,
          (void *)(obj_loc));
         VG_(memcpy)
-        ((UChar *)&server->current_io_vec->initial_state.register_state +
+        ((UChar *)&server->current_io_vec->initial_state.register_state.buf +
              tainted_loc.location.offset,
          &obj_loc, sizeof(obj_loc));
 
         *(RegWord *)(&server->current_io_vec->initial_register_state_map
-                          [tainted_loc.location.offset]) = OBJ_ALLOCATED_MAGIC;
+                          .buf[tainted_loc.location.offset]) =
+            OBJ_ALLOCATED_MAGIC;
       }
       break;
     case taint_stack:
@@ -808,11 +836,14 @@ static Bool wait_for_child(SE_(cmd_server) * server) {
         }
         server->current_io_vec = SE_(create_io_vec)();
         VG_(memcpy)
-        ((UChar *)&server->current_io_vec->initial_state.register_state,
+        ((UChar *)&server->current_io_vec->initial_state.register_state.buf,
          cmd_msg->data, cmd_msg->length);
         SE_(free_msg)(cmd_msg);
-        server->initial_stack_ptr =
-            server->current_io_vec->initial_state.register_state.VG_STACK_PTR;
+        VG_(memcpy)
+        (&server->initial_stack_ptr,
+         &server->current_io_vec->initial_state.register_state
+              .buf[VG_O_STACK_PTR],
+         sizeof(server->initial_stack_ptr));
         server->initial_frame_ptr = server->initial_stack_ptr;
         server->min_stack_ptr = server->initial_stack_ptr;
         report_success(server, 0, NULL);

@@ -21,7 +21,7 @@ const HChar *SE_IOVEC_MALLOC_TYPE;
 #define OBJ_ALLOCATED_MAGIC 0b00001000
 
 typedef struct se_program_state_ {
-  VexGuestArchState register_state; /* Register values */
+  SE_(memoized_object) register_state; /* Register values */
   RangeMap *address_state; /* Which addresses are allocated as objects */
 } SE_(program_state);
 
@@ -34,7 +34,7 @@ typedef struct io_vec {
   SE_(program_state) expected_state; /* State expected post-execution */
 
   /* Maps which parts of the register states are pointers */
-  UChar initial_register_state_map[sizeof(VexGuestArchState)];
+  SE_(memoized_object) initial_register_state_map;
 
   OSet *system_calls; /* Unique set of system calls executed */
 } SE_(io_vec);
@@ -70,5 +70,22 @@ SizeT SE_(io_vec_size)(SE_(io_vec) * io_vec);
  * @return IOVec or NULL on error
  */
 SE_(io_vec) * SE_(read_io_vec_from_fd)(Int fd);
+
+/**
+ * @brief Creates an IOVec from src
+ * @param dest
+ * @param len
+ * @param src
+ */
+SE_(io_vec) * SE_(read_io_vec_from_buf)(SizeT len, UChar *src);
+
+/**
+ * @brief Memoizes an IOVec into a memory buffer
+ * @param io_vec
+ * @param dest
+ * @return
+ */
+void SE_(write_io_vec_to_buf)(SE_(io_vec) * io_vec,
+                              SE_(memoized_object) * dest);
 
 #endif // SE_VALGRIND_SE_IO_VEC_H
