@@ -474,7 +474,6 @@ Bool SE_(IRExpr_contains_load)(const IRExpr *irExpr) {
   case Iex_RdTmp:
   case Iex_Get:
   case Iex_Const:
-  case Iex_CCall:
     result = False;
     break;
   case Iex_Load:
@@ -498,8 +497,22 @@ Bool SE_(IRExpr_contains_load)(const IRExpr *irExpr) {
              SE_(IRExpr_contains_load)(irExpr->Iex.Qop.details->arg3) ||
              SE_(IRExpr_contains_load)(irExpr->Iex.Qop.details->arg4);
     break;
+  case Iex_ITE:
+    result = SE_(IRExpr_contains_load)(irExpr->Iex.ITE.cond) ||
+             SE_(IRExpr_contains_load)(irExpr->Iex.ITE.iffalse) ||
+             SE_(IRExpr_contains_load)(irExpr->Iex.ITE.iftrue);
+    break;
+  case Iex_CCall:
+    result = False;
+    Int i = 0;
+    IRExpr *arg = irExpr->Iex.CCall.args[i];
+    while (arg && !result) {
+      result = SE_(IRExpr_contains_load)(arg);
+      arg = irExpr->Iex.CCall.args[++i];
+    }
+    break;
   default:
-    VG_(umsg)("Invalid get_IRExpr expression: \n");
+    VG_(umsg)("Invalid IRExpr_contains_load expression: \n");
     ppIRExpr(irExpr);
     tl_assert(0);
   }

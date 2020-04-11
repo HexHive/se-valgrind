@@ -603,8 +603,8 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
      sizeof(tainted_loc));
     bytes_read += sizeof(tainted_loc);
 
-    VG_(umsg)("Received ");
-    SE_(ppTaintedLocation)(&tainted_loc);
+    //    VG_(umsg)("Received ");
+    //    SE_(ppTaintedLocation)(&tainted_loc);
 
     switch (tainted_loc.type) {
     case taint_reg:
