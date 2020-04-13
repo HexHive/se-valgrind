@@ -581,7 +581,7 @@ static void record_current_state(Addr addr) {
   //  VG_(umsg)
   //      ("Executing 0x%lx (%s)\n", VG_(get_IP)(target_id), fnname);
   if (client_running && main_replaced && target_called) {
-    if (VG_(sizeXA) > SE_(MaxInstructions)) {
+    if (VG_(sizeXA)(program_states) > SE_(MaxInstructions)) {
       SE_(report_too_many_instrs_to_commander)();
     }
 
