@@ -165,7 +165,7 @@ static void SE_(send_fuzzed_io_vec)(void) {
    SE_(command_server)->current_io_vec->expected_state.register_state.buf, 0, 0,
    SE_(command_server)->current_io_vec->expected_state.register_state.len);
 
-  SE_(ppIOVec)(SE_(command_server)->current_io_vec);
+  //  SE_(ppIOVec)(SE_(command_server)->current_io_vec);
 
   tl_assert(SE_(write_io_vec_to_cmd_server)(SE_(command_server)->current_io_vec,
                                             False) > 0);
