@@ -331,6 +331,9 @@ void SE_(write_io_vec_to_buf)(SE_(io_vec) * io_vec,
 void SE_(ppIOVec)(SE_(io_vec) * io_vec) {
   tl_assert(io_vec);
 
+  VG_(printf)
+  ("==========================================================================="
+   "====================\n");
   VG_(printf)("host_arch:    %s\n", LibVEX_ppVexArch(io_vec->host_arch));
   VG_(printf)("host_endness: %s\n", LibVEX_ppVexEndness(io_vec->host_endness));
   VG_(printf)("random_seed:  %u\n", io_vec->random_seed);
@@ -347,6 +350,9 @@ void SE_(ppIOVec)(SE_(io_vec) * io_vec) {
   SE_(ppProgramState)(&io_vec->initial_state);
   VG_(printf)("Expected State:\n");
   SE_(ppProgramState)(&io_vec->expected_state);
+  VG_(printf)
+  ("==========================================================================="
+   "====================\n");
 }
 
 void SE_(ppProgramState)(SE_(program_state) * program_state) {
@@ -363,14 +369,9 @@ void SE_(ppProgramState)(SE_(program_state) * program_state) {
       in_obj = True;
       VG_(printf)("\t%p [", (void *)key_min);
     }
-    if (in_obj) {
-      for (UWord diff = key_max - key_min; diff >= 0; diff--) {
-        if (val & ALLOCATED_SUBPTR_MAGIC) {
-          VG_(printf)("O");
-        } else {
-          VG_(printf)("X");
-        }
-      }
+
+    if (in_obj && (val & ALLOCATED_SUBPTR_MAGIC)) {
+      VG_(printf)("PTR: [%016lx -- %016lx]\n", key_min, key_max);
     }
 
     if (val & OBJ_END_MAGIC) {

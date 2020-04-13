@@ -33,9 +33,11 @@ void SE_(ppMemoizedObject)(SE_(memoized_object) * obj) {
   tl_assert(obj);
 
   SizeT idx;
+  UInt col_count = 0;
+  const Int max_cols = 4;
 
-  const HChar *start_fmt =
-      "============================ %s ============================\n";
+  const HChar *start_fmt = "========================================= %s "
+                           "=========================================\n";
 
   switch (obj->type) {
   case se_memo_invalid:
@@ -51,16 +53,19 @@ void SE_(ppMemoizedObject)(SE_(memoized_object) * obj) {
     VG_(printf)(start_fmt, "Arch State");
     for (idx = 0; idx + sizeof(RegWord) < obj->len; idx += sizeof(RegWord)) {
       RegWord val = *(RegWord *)(obj->buf + idx);
-      VG_(printf)("%p ", (void *)val);
-      if (idx > 0 && idx % 128 == 0) {
+      VG_(printf)("0x%016lx ", val);
+      if (++col_count > max_cols) {
+        col_count = 0;
         VG_(printf)("\n");
       }
     }
+    Bool add_prefix = True;
     for (/* keep same idx */; idx < obj->len; idx++) {
-      if (idx > 0 && idx % 128 == 0) {
-        VG_(printf)(" 0x");
+      if (add_prefix) {
+        VG_(printf)("%s0x", col_count == 0 ? "" : " ");
+        add_prefix = False;
       }
-      VG_(printf)("%x", obj->buf[idx]);
+      VG_(printf)("%02x", obj->buf[idx]);
     }
     break;
   default:
@@ -68,5 +73,7 @@ void SE_(ppMemoizedObject)(SE_(memoized_object) * obj) {
   }
 
 finish:
-  VG_(printf)("------------------------------------------------------------\n");
+  VG_(printf)
+  ("\n-------------------------------------------------------------------------"
+   "---------------------\n");
 }

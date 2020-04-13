@@ -112,7 +112,7 @@ static void report_error(SE_(cmd_server) * server, const HChar *msg) {
  * @param server
  */
 static void report_timeout(SE_(cmd_server) * server) {
-  SE_(cmd_msg) *cmdmsg = SE_(create_cmd_msg)(SEMSG_TOO_MANY_INS, 0, NULL);
+  SE_(cmd_msg) *cmdmsg = SE_(create_cmd_msg)(SEMSG_TIMEOUT, 0, NULL);
   write_to_commander(server, cmdmsg, True);
   SE_(set_server_state)(server, SERVER_REPORT_ERROR);
 }

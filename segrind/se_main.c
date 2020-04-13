@@ -165,6 +165,8 @@ static void SE_(send_fuzzed_io_vec)(void) {
    SE_(command_server)->current_io_vec->expected_state.register_state.buf, 0, 0,
    SE_(command_server)->current_io_vec->expected_state.register_state.len);
 
+  SE_(ppIOVec)(SE_(command_server)->current_io_vec);
+
   tl_assert(SE_(write_io_vec_to_cmd_server)(SE_(command_server)->current_io_vec,
                                             False) > 0);
 }
@@ -581,9 +583,9 @@ static void record_current_state(Addr addr) {
   //  VG_(umsg)
   //      ("Executing 0x%lx (%s)\n", VG_(get_IP)(target_id), fnname);
   if (client_running && main_replaced && target_called) {
-    if (VG_(sizeXA)(program_states) > SE_(MaxInstructions)) {
-      SE_(report_too_many_instrs_to_commander)();
-    }
+    //    if (VG_(sizeXA)(program_states) > SE_(MaxInstructions)) {
+    //      SE_(report_too_many_instrs_to_commander)();
+    //    }
 
     VexGuestArchState current_state;
     VG_(get_shadow_regs_area)

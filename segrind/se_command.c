@@ -109,6 +109,8 @@ const HChar *SE_(msg_type_str)(SE_(cmd_msg_t) type) {
     return "SEMSG_TOO_MANY_ATTEMPTS";
   case SEMSG_COVERAGE:
     return "SEMSG_COVERAGE";
+  case SEMSG_TIMEOUT:
+    return "SEMSG_TIMEOUT";
   default:
     tl_assert(0);
   }
