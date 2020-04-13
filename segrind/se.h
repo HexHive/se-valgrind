@@ -10,6 +10,7 @@
 #define DEFAULT_DURATION ((UInt)10000)
 #define DEFAULT_ATTEMPTS ((UInt)25)
 #define WARN_ATTEMPTS 10
+#define DEFAULT_MAX_INSTR ((ULong)1000000UL)
 
 #define SE_TOOL_ALLOC_STR "segrind"
 
@@ -25,16 +26,35 @@
 #include "pub_tool_vki.h"
 #include "se_defs.h"
 
+/**
+ * @brief Input/Output pipes and logfiles
+ */
 Int SE_(cmd_in), SE_(cmd_out), SE_(log);
 
-/* Number of milliseconds to run a function for */
+/**
+ * @brief Number of milliseconds to wait for a function to complete
+ */
 UInt SE_(MaxDuration);
 
+/**
+ * @brief Address of main function
+ */
 Addr SE_(user_main);
 
+/**
+ * @brief Random seed
+ */
 UInt SE_(seed);
 
+/**
+ * @brief Max attempts at executing a function before quitting
+ */
 UInt SE_(MaxAttempts);
+
+/**
+ * @brief Max number of instructions to execute per function execution
+ */
+ULong SE_(MaxInstructions);
 
 typedef enum _memorized_obj_type {
   se_memo_invalid,

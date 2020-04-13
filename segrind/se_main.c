@@ -91,6 +91,7 @@ static HChar *target_name = NULL;
 static Int recursive_target_call_count = 0;
 
 static void SE_(report_failure_to_commander)(void);
+static void SE_(report_too_many_instrs_to_commander)(void);
 static void fix_address_space(void);
 static IRDirty *make_call_to_record_current_state(Addr, IRType);
 static IRDirty *make_call_to_jump_to_target(void);
@@ -336,8 +337,8 @@ static void fix_address_space() {
       Word orig_stmt_idx = stmt_idx;
       for (Int i = irsb->stmts_used - 1; i >= 0; i--) {
         IRStmt *stmt = irsb->stmts[i];
-        //                ppIRStmt(stmt);
-        //                VG_(printf)("\n");
+        //                        ppIRStmt(stmt);
+        //                        VG_(printf)("\n");
         Bool taint_found = SE_(taint_found)();
         switch (stmt->tag) {
         case Ist_IMark:
@@ -556,6 +557,19 @@ static void SE_(report_failure_to_commander)(void) {
   SE_(cleanup_and_exit)();
 }
 
+/**
+ * @brief Write SEMSG_TOO_MANY_INS to commander process
+ */
+static void SE_(report_too_many_instrs_to_commander)(void) {
+  tl_assert(client_running);
+
+  SE_(write_msg_to_fd)
+  (SE_(command_server)->executor_pipe[1],
+   SE_(create_cmd_msg)(SEMSG_TOO_MANY_INS, 0, NULL), True);
+
+  SE_(cleanup_and_exit)();
+}
+
 static void SE_(thread_exit)(ThreadId tid) {}
 
 /**
@@ -568,17 +582,21 @@ static void record_current_state(Addr addr) {
   //  VG_(umsg)
   //      ("Executing 0x%lx (%s)\n", VG_(get_IP)(target_id), fnname);
   if (client_running && main_replaced && target_called) {
+    if (VG_(sizeXA) > SE_(MaxInstructions)) {
+      SE_(report_too_many_instrs_to_commander)();
+    }
+
     VexGuestArchState current_state;
     VG_(get_shadow_regs_area)
     (target_id, (UChar *)&current_state, 0, 0, sizeof(current_state));
 
-    //    const HChar *fnname;
-    //    VG_(get_fnname)
-    //    (VG_(current_DiEpoch)(), current_state.VG_INSTR_PTR, &fnname);
-    //    VG_(umsg)
-    //    ("Recording state for %p/%p (%s)\n", (void
-    //    *)current_state.VG_INSTR_PTR,
-    //     (void *)addr, fnname);
+    //        const HChar *fnname;
+    //        VG_(get_fnname)
+    //        (VG_(current_DiEpoch)(), current_state.VG_INSTR_PTR, &fnname);
+    //        VG_(umsg)
+    //        ("Recording state for %p/%p (%s)\n", (void
+    //        *)current_state.VG_INSTR_PTR,
+    //         (void *)addr, fnname);
 
     current_state.VG_INSTR_PTR = addr;
 

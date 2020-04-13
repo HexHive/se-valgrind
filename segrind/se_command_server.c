@@ -603,8 +603,16 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
      sizeof(tainted_loc));
     bytes_read += sizeof(tainted_loc);
 
-    //    VG_(umsg)("Received ");
-    //    SE_(ppTaintedLocation)(&tainted_loc);
+    if (tainted_loc.type == taint_addr || tainted_loc.type == taint_stack) {
+      VG_(umsg)
+      ("Received tainted %s %p\n",
+       tainted_loc.type == taint_stack ? "stack address" : "address",
+       (void *)tainted_loc.location.addr);
+    } else if (tainted_loc.type == taint_reg) {
+      VG_(umsg)("Received tainted register %d\n", tainted_loc.location.offset);
+    } else {
+      VG_(umsg)("Received invalid taint\n");
+    }
 
     switch (tainted_loc.type) {
     case taint_reg:
@@ -835,11 +843,6 @@ static Bool wait_for_child(SE_(cmd_server) * server) {
           goto cleanup;
         }
 
-        VG_(umsg)
-        ("Copying %lu bytes from %p to %p (which alloted %lu bytes)\n",
-         cmd_msg->length, cmd_msg->data,
-         server->current_io_vec->initial_state.register_state.buf,
-         server->current_io_vec->initial_state.register_state.len);
         VG_(memcpy)
         (server->current_io_vec->initial_state.register_state.buf,
          cmd_msg->data, cmd_msg->length);

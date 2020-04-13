@@ -11,6 +11,7 @@ Int SE_(cmd_out) = -1;
 Int SE_(log) = -1;
 Addr SE_(user_main) = 0;
 UInt SE_(MaxAttempts) = DEFAULT_ATTEMPTS;
+ULong SE_(MaxInstructions) = DEFAULT_MAX_INSTR;
 
 Bool SE_(process_cmd_line_option)(const HChar *arg) {
   const HChar *tmp_str;
@@ -43,6 +44,7 @@ Bool SE_(process_cmd_line_option)(const HChar *arg) {
     if (SE_(MaxAttempts) > WARN_ATTEMPTS) {
       VG_(umsg)("Warning! High Attempt Count %u\n!", SE_(MaxAttempts));
     }
+  } else if (VG_INT_CLO(arg, "--max-inst", SE_(MaxInstructions))) {
   }
 
   return False;

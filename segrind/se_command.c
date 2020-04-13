@@ -48,6 +48,7 @@ void SE_(free_msg)(SE_(cmd_msg) * msg) {
 SizeT SE_(write_msg_to_fd)(Int fd, SE_(cmd_msg) * msg, Bool free_msg) {
   tl_assert(fd >= 0);
   tl_assert(msg);
+  tl_assert(msg->msg_type >= SEMSG_FAIL && msg->msg_type < SEMSG_INVALID);
 
   SizeT bytes_written = 0;
   if (VG_(write)(fd, &msg->msg_type, sizeof(msg->msg_type)) <= 0) {
