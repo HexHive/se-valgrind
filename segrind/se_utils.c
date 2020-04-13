@@ -50,7 +50,7 @@ void SE_(ppMemoizedObject)(SE_(memoized_object) * obj) {
     VG_(printf)(start_fmt, " OSetWord ");
     goto finish;
   case se_memo_arch_state:
-    VG_(printf)(start_fmt, "Arch State");
+    VG_(printf)(start_fmt, "Reg  State");
     for (idx = 0; idx + sizeof(RegWord) < obj->len; idx += sizeof(RegWord)) {
       RegWord val = *(RegWord *)(obj->buf + idx);
       VG_(printf)("0x%016lx ", val);

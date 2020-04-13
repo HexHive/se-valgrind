@@ -58,8 +58,12 @@ void SE_(print_usage)(void) {
    "--max-duration=<millis>      Max number of milliseconds to run before "
    "executor process is killed. Defaults to %u\n"
    "--max-attempts=<int>         Max number of attempts at trying to fuzz a "
-   "function before giving up. Defaults to %u\n",
-   DEFAULT_DURATION, DEFAULT_ATTEMPTS);
+   "function before giving up. Defaults to %u\n"
+   "--main-addr=<addr>           The location of main\n"
+   "--seed=<int>                 The initial seed to use\n"
+   "--max-inst=<int>             Max number of instructions to execute before "
+   "executor process quits. Defaults to %llu\n",
+   DEFAULT_DURATION, DEFAULT_ATTEMPTS, DEFAULT_MAX_INSTR);
 }
 
 void SE_(print_debug_usage)(void) { SE_(print_usage)(); }

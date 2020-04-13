@@ -344,9 +344,16 @@ void SE_(ppIOVec)(SE_(io_vec) * io_vec) {
   while (VG_(OSetWord_Next)(io_vec->system_calls, &syscall)) {
     VG_(printf)("%lu ", syscall);
   }
-  VG_(printf)("\n");
+  VG_(printf)("\nRegister Pointers: ");
+  for (SizeT i = 0; i < io_vec->initial_register_state_map.len;
+       i += sizeof(RegWord)) {
+    RegWord reg = *(RegWord *)(io_vec->initial_register_state_map.buf + i);
+    if (reg == OBJ_ALLOCATED_MAGIC) {
+      VG_(printf)("%lu ", i);
+    }
+  }
 
-  VG_(printf)("Initial State:\n");
+  VG_(printf)("\nInitial State:\n");
   SE_(ppProgramState)(&io_vec->initial_state);
   VG_(printf)("Expected State:\n");
   SE_(ppProgramState)(&io_vec->expected_state);
@@ -380,10 +387,5 @@ void SE_(ppProgramState)(SE_(program_state) * program_state) {
     }
   }
 
-  VG_(printf)
-  ("-------------------------------------------------------------\n");
-  VG_(printf)("Register State:\n");
   SE_(ppMemoizedObject)(&program_state->register_state);
-  VG_(printf)
-  ("-------------------------------------------------------------\n");
 }
