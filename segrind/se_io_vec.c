@@ -43,17 +43,17 @@ SE_(io_vec) * SE_(create_io_vec)(void) {
   io_vec->initial_register_state_map.buf =
       VG_(malloc)(SE_IOVEC_MALLOC_TYPE, sizeof(VexGuestArchState));
 
-  Int offset = VG_O_STACK_PTR;
-  *(Addr *)(&io_vec->initial_register_state_map.buf[offset]) =
-      OBJ_ALLOCATED_MAGIC;
-
-  offset = VG_O_INSTR_PTR;
-  *(Addr *)(&io_vec->initial_register_state_map.buf[offset]) =
-      OBJ_ALLOCATED_MAGIC;
-
-  offset = VG_O_FRAME_PTR;
-  *(Addr *)(&io_vec->initial_register_state_map.buf[offset]) =
-      OBJ_ALLOCATED_MAGIC;
+  //  Int offset = VG_O_STACK_PTR;
+  //  *(Addr *)(&io_vec->initial_register_state_map.buf[offset]) =
+  //      OBJ_ALLOCATED_MAGIC;
+  //
+  //  offset = VG_O_INSTR_PTR;
+  //  *(Addr *)(&io_vec->initial_register_state_map.buf[offset]) =
+  //      OBJ_ALLOCATED_MAGIC;
+  //
+  //  offset = VG_O_FRAME_PTR;
+  //  *(Addr *)(&io_vec->initial_register_state_map.buf[offset]) =
+  //      OBJ_ALLOCATED_MAGIC;
 
   return io_vec;
 }
