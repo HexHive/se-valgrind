@@ -28,3 +28,45 @@ void SE_(Memoize_OSetWord)(OSet *oset, SE_(memoized_object) * dest) {
   dest->len = len;
   dest->type = se_memo_oset_word;
 }
+
+void SE_(ppMemoizedObject)(SE_(memoized_object) * obj) {
+  tl_assert(obj);
+
+  SizeT idx;
+
+  const HChar *start_fmt =
+      "============================ %s ============================\n";
+
+  switch (obj->type) {
+  case se_memo_invalid:
+    VG_(printf)(start_fmt, " INVALID ");
+    goto finish;
+  case se_memo_io_vec:
+    VG_(printf)(start_fmt, "  IOVec  ");
+    goto finish;
+  case se_memo_oset_word:
+    VG_(printf)(start_fmt, " OSetWord ");
+    goto finish;
+  case se_memo_arch_state:
+    VG_(printf)(start_fmt, "Arch State");
+    for (idx = 0; idx + sizeof(RegWord) < obj->len; idx += sizeof(RegWord)) {
+      RegWord val = *(RegWord *)(obj->buf + idx);
+      VG_(printf)("%p ", (void *)val);
+      if (idx > 0 && idx % 128 == 0) {
+        VG_(printf)("\n");
+      }
+    }
+    for (/* keep same idx */; idx < obj->len; idx++) {
+      if (idx > 0 && idx % 128 == 0) {
+        VG_(printf)(" 0x");
+      }
+      VG_(printf)("%x", obj->buf[idx]);
+    }
+    break;
+  default:
+    tl_assert2(0, "Invalid memoized_obj type: %d", obj->type);
+  }
+
+finish:
+  VG_(printf)("------------------------------------------------------------\n");
+}

@@ -6,6 +6,7 @@
 #include "pub_tool_machine.h"
 #include "pub_tool_mallocfree.h"
 #include "se_command.h"
+#include "se_utils.h"
 
 const HChar *SE_IOVEC_MALLOC_TYPE = "SE_(io_vec)";
 
@@ -325,4 +326,63 @@ void SE_(write_io_vec_to_buf)(SE_(io_vec) * io_vec,
   dest->len = bytes_written;
   dest->buf = data;
   dest->type = se_memo_io_vec;
+}
+
+void SE_(ppIOVec)(SE_(io_vec) * io_vec) {
+  tl_assert(io_vec);
+
+  VG_(printf)("host_arch:    %s\n", LibVEX_ppVexArch(io_vec->host_arch));
+  VG_(printf)("host_endness: %s\n", LibVEX_ppVexEndness(io_vec->host_endness));
+  VG_(printf)("random_seed:  %u\n", io_vec->random_seed);
+
+  VG_(printf)("System Calls: ");
+  UWord syscall;
+  VG_(OSetWord_ResetIter)(io_vec->system_calls);
+  while (VG_(OSetWord_Next)(io_vec->system_calls, &syscall)) {
+    VG_(printf)("%lu ", syscall);
+  }
+  VG_(printf)("\n");
+
+  VG_(printf)("Initial State:\n");
+  SE_(ppProgramState)(&io_vec->initial_state);
+  VG_(printf)("Expected State:\n");
+  SE_(ppProgramState)(&io_vec->expected_state);
+}
+
+void SE_(ppProgramState)(SE_(program_state) * program_state) {
+  tl_assert(program_state);
+
+  UWord idx = VG_(sizeRangeMap)(program_state->address_state);
+  Bool in_obj = False;
+  VG_(printf)("Allocated addresses:\n");
+  for (UWord i = 0; i < idx; i++) {
+    UWord key_min, key_max, val;
+    VG_(indexRangeMap)
+    (&key_min, &key_max, &val, program_state->address_state, i);
+    if (val & OBJ_START_MAGIC) {
+      in_obj = True;
+      VG_(printf)("\t%p [", (void *)key_min);
+    }
+    if (in_obj) {
+      for (UWord diff = key_max - key_min; diff >= 0; diff--) {
+        if (val & ALLOCATED_SUBPTR_MAGIC) {
+          VG_(printf)("O");
+        } else {
+          VG_(printf)("X");
+        }
+      }
+    }
+
+    if (val & OBJ_END_MAGIC) {
+      in_obj = False;
+      VG_(printf)("] %p\n", (void *)key_max);
+    }
+  }
+
+  VG_(printf)
+  ("-------------------------------------------------------------\n");
+  VG_(printf)("Register State:\n");
+  SE_(ppMemoizedObject)(&program_state->register_state);
+  VG_(printf)
+  ("-------------------------------------------------------------\n");
 }

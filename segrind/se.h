@@ -77,14 +77,4 @@ void SE_(print_usage)(void);
 void SE_(print_debug_usage)(void);
 void SE_(set_clo_defaults)(void);
 
-/*****************************************************
- * Utilities
- *****************************************************/
-/**
- * @brief Copies an OSetWord size and data into allocated memory buffer
- * @param oset
- * @param dest - Where to write the location of the allocated memory buffer
- */
-void SE_(Memoize_OSetWord)(OSet *oset, SE_(memoized_object) * dest);
-
 #endif // FOSBIN_SE_H

@@ -88,4 +88,16 @@ SE_(io_vec) * SE_(read_io_vec_from_buf)(SizeT len, UChar *src);
 void SE_(write_io_vec_to_buf)(SE_(io_vec) * io_vec,
                               SE_(memoized_object) * dest);
 
+/**
+ * @brief Prints the IOVec using printf
+ * @param io_vec
+ */
+void SE_(ppIOVec)(SE_(io_vec) * io_vec);
+
+/**
+ * @brief Prints the program state using printf
+ * @param program_state
+ */
+void SE_(ppProgramState)(SE_(program_state) * program_state);
+
 #endif // SE_VALGRIND_SE_IO_VEC_H

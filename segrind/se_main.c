@@ -28,8 +28,7 @@
 #include "se_defs.h"
 #include "se_io_vec.h"
 #include "se_taint.h"
-#include <libvex_ir.h>
-#include <pub_tool_addrinfo.h>
+#include "se_utils.h"
 
 #include "libvex.h"
 #include "libvex_ir.h"

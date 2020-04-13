@@ -5,6 +5,7 @@
 #include "se_command_server.h"
 #include "se_fuzz.h"
 #include "se_taint.h"
+#include "se_utils.h"
 
 #include "pub_tool_addrinfo.h"
 #include "pub_tool_guest.h"
