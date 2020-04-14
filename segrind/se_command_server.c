@@ -278,13 +278,42 @@ static Bool handle_set_io_vec(SE_(cmd_server) * server,
   server->current_io_vec =
       SE_(read_io_vec_from_buf)(cmd_msg->length, (UChar *)cmd_msg->data);
 
-  SE_(ppIOVec)(server->current_io_vec);
+  //  SE_(ppIOVec)(server->current_io_vec);
   UInt seed = server->current_io_vec->random_seed;
 
-  fuzz_input_pointers(server->current_io_vec, &seed);
-  fuzz_registers(server->current_io_vec, &seed);
+  /* Establish valid memory state */
+  UInt size =
+      VG_(sizeRangeMap)(server->current_io_vec->initial_state.address_state);
+  UWord obj_min_addr = 0, obj_max_addr = 0;
+  for (UInt i = 0; i < size; i++) {
+    UWord addr_min, addr_max, val;
+    VG_(indexRangeMap)
+    (&addr_min, &addr_max, &val,
+     server->current_io_vec->initial_state.address_state, i);
+    if (val & OBJ_START_MAGIC) {
+      obj_min_addr = addr_min;
+    } else if (val & OBJ_END_MAGIC) {
+      obj_max_addr = addr_max;
 
-  SE_(ppIOVec)(server->current_io_vec);
+      SysRes res = VG_(am_mmap_anon_fixed_client)(
+          obj_min_addr, obj_max_addr - obj_min_addr,
+          VKI_PROT_READ | VKI_PROT_WRITE);
+      if (sr_isError(res)) {
+        VG_(umsg)
+        ("Could not allocate %lu bytes at %p!\n", obj_max_addr - obj_min_addr,
+         (void *)obj_min_addr);
+        return False;
+      }
+    }
+  }
+
+  /* Set initial memory values based on the random seed provided by the IOVec */
+  fuzz_input_pointers(server->current_io_vec, &seed);
+  /* No need to fuzz registers, since the ''fuzzed`` registers come in with
+   * the initial state */
+  //  fuzz_registers(server->current_io_vec, &seed);
+
+  //  SE_(ppIOVec)(server->current_io_vec);
 
   server->using_existing_io_vec = True;
   server->using_fuzzed_io_vec = False;
