@@ -180,6 +180,55 @@ static Bool handle_set_target_cmd(SE_(cmd_msg) * msg,
   return False;
 }
 
+static void fuzz_input_pointers(SE_(io_vec) * io_vec, UInt *seed) {
+  tl_assert(io_vec);
+  tl_assert(seed);
+
+  UInt size = VG_(sizeRangeMap)(io_vec->initial_state.address_state);
+  Bool in_obj = False;
+  VG_(umsg)("Fuzzing allocated areas\n");
+  for (Word i = 0; i < size; i++) {
+    UWord key_min, key_max, val;
+    VG_(indexRangeMap)
+    (&key_min, &key_max, &val, io_vec->initial_state.address_state, i);
+
+    //    VG_(umsg)("\t[0x%lx - 0x%lx] = %lu\n", key_min, key_max, val);
+
+    if (val & OBJ_START_MAGIC) {
+      in_obj = True;
+    }
+
+    if (in_obj && !(val & ALLOCATED_SUBPTR_MAGIC)) {
+      SE_(fuzz_region)(seed, key_min, key_max);
+    }
+
+    if (val & OBJ_END_MAGIC) {
+      in_obj = False;
+      continue;
+    }
+  }
+}
+
+static void fuzz_registers(SE_(io_vec) * io_vec, UInt *seed) {
+  tl_assert(io_vec);
+  tl_assert(seed);
+
+  VG_(umsg)("Fuzzing registers\n");
+  /* Fuzz registers, if they aren't assigned to an allocated pointer */
+  Int gpr_offsets[] = SE_O_GPRS;
+  for (Int i = 0; i < SE_NUM_GPRS; i++) {
+    Int current_offset = gpr_offsets[i];
+    RegWord reg_val =
+        *(RegWord *)(&io_vec->initial_register_state_map.buf[current_offset]);
+    if (reg_val != OBJ_ALLOCATED_MAGIC) {
+      SE_(fuzz_region)
+      (seed, (Addr)(io_vec->initial_state.register_state.buf + current_offset),
+       (Addr)(io_vec->initial_state.register_state.buf + current_offset +
+              sizeof(RegWord) - 1));
+    }
+  }
+}
+
 /**
  * @brief Fuzzes and sets the guest program state
  * @param server
@@ -198,49 +247,8 @@ static Bool fuzz_program_state(SE_(cmd_server) * server) {
   server->using_existing_io_vec = False;
 
   /* Fuzz input pointers */
-  UInt size =
-      VG_(sizeRangeMap)(server->current_io_vec->initial_state.address_state);
-  Bool in_obj = False;
-  VG_(umsg)("Fuzzing allocated areas\n");
-  for (Word i = 0; i < size; i++) {
-    UWord key_min, key_max, val;
-    VG_(indexRangeMap)
-    (&key_min, &key_max, &val,
-     server->current_io_vec->initial_state.address_state, i);
-
-    //    VG_(umsg)("\t[0x%lx - 0x%lx] = %lu\n", key_min, key_max, val);
-
-    if (val & OBJ_START_MAGIC) {
-      in_obj = True;
-    }
-
-    if (in_obj && !(val & ALLOCATED_SUBPTR_MAGIC)) {
-      SE_(fuzz_region)(&SE_(seed), key_min, key_max);
-    }
-
-    if (val & OBJ_END_MAGIC) {
-      in_obj = False;
-      continue;
-    }
-  }
-
-  VG_(umsg)("Fuzzing registers\n");
-  /* Fuzz registers, if they aren't assigned to an allocated pointer */
-  Int gpr_offsets[] = SE_O_GPRS;
-  for (Int i = 0; i < SE_NUM_GPRS; i++) {
-    Int current_offset = gpr_offsets[i];
-    RegWord reg_val =
-        *(RegWord *)(&server->current_io_vec->initial_register_state_map
-                          .buf[current_offset]);
-    if (reg_val != OBJ_ALLOCATED_MAGIC) {
-      SE_(fuzz_region)
-      (&SE_(seed),
-       (Addr)(server->current_io_vec->initial_state.register_state.buf +
-              current_offset),
-       (Addr)(server->current_io_vec->initial_state.register_state.buf +
-              current_offset + sizeof(RegWord) - 1));
-    }
-  }
+  fuzz_input_pointers(server->current_io_vec, &SE_(seed));
+  fuzz_registers(server->current_io_vec, &SE_(seed));
 
   VG_(memcpy)
   (&server->current_io_vec->initial_state.register_state.buf[VG_O_FRAME_PTR],
@@ -269,6 +277,11 @@ static Bool handle_set_io_vec(SE_(cmd_server) * server,
   }
   server->current_io_vec =
       SE_(read_io_vec_from_buf)(cmd_msg->length, (UChar *)cmd_msg->data);
+
+  UInt seed = server->current_io_vec->random_seed;
+
+  fuzz_input_pointers(server->current_io_vec, &seed);
+  fuzz_registers(server->current_io_vec, &seed);
 
   server->using_existing_io_vec = True;
   server->using_fuzzed_io_vec = False;

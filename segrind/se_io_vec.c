@@ -120,11 +120,6 @@ SizeT SE_(io_vec_size)(SE_(io_vec) * io_vec) {
          + VG_(OSetWord_Size)(io_vec->system_calls) * sizeof(UWord);
 }
 
-SE_(io_vec) * SE_(read_io_vec_from_fd)(Int fd) {
-  /* TODO: Implement me */
-  return NULL;
-}
-
 SE_(io_vec) * SE_(read_io_vec_from_buf)(SizeT len, UChar *src) {
   tl_assert(len > 0);
   tl_assert(src);
