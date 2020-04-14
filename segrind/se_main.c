@@ -110,6 +110,8 @@ static SizeT SE_(write_io_vec_to_cmd_server)(SE_(io_vec) * io_vec,
   SizeT bytes_written = SE_(write_io_vec_to_fd)(
       SE_(command_server)->executor_pipe[1], SEMSG_OK, io_vec);
 
+  SE_(ppIOVec)(io_vec);
+
   if (free_io_vec) {
     SE_(free_io_vec)(io_vec);
   }
@@ -338,8 +340,8 @@ static void fix_address_space() {
       Word orig_stmt_idx = stmt_idx;
       for (Int i = irsb->stmts_used - 1; i >= 0; i--) {
         IRStmt *stmt = irsb->stmts[i];
-        ppIRStmt(stmt);
-        VG_(printf)("\n");
+        //        ppIRStmt(stmt);
+        //        VG_(printf)("\n");
         Bool taint_found = SE_(taint_found)();
         switch (stmt->tag) {
         case Ist_IMark:
@@ -591,12 +593,13 @@ static void record_current_state(Addr addr) {
     VG_(get_shadow_regs_area)
     (target_id, (UChar *)&current_state, 0, 0, sizeof(current_state));
 
-    const HChar *fnname;
-    VG_(get_fnname)
-    (VG_(current_DiEpoch)(), current_state.VG_INSTR_PTR, &fnname);
-    VG_(umsg)
-    ("Recording state for %p/%p (%s)\n", (void *)current_state.VG_INSTR_PTR,
-     (void *)addr, fnname);
+    //    const HChar *fnname;
+    //    VG_(get_fnname)
+    //    (VG_(current_DiEpoch)(), current_state.VG_INSTR_PTR, &fnname);
+    //    VG_(umsg)
+    //    ("Recording state for %p/%p (%s)\n", (void
+    //    *)current_state.VG_INSTR_PTR,
+    //     (void *)addr, fnname);
 
     current_state.VG_INSTR_PTR = addr;
 

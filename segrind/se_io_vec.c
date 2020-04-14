@@ -145,6 +145,7 @@ SE_(io_vec) * SE_(read_io_vec_from_buf)(SizeT len, UChar *src) {
   (&io_vec->initial_state.register_state.len, src + bytes_read,
    sizeof(io_vec->initial_state.register_state.len));
   bytes_read += sizeof(io_vec->initial_state.register_state.len);
+
   io_vec->initial_state.register_state.buf = VG_(malloc)(
       SE_IOVEC_MALLOC_TYPE, io_vec->initial_state.register_state.len);
   VG_(memcpy)
