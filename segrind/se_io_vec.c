@@ -45,7 +45,10 @@ SE_(io_vec) * SE_(create_io_vec)(void) {
   io_vec->initial_register_state_map.buf =
       VG_(malloc)(SE_IOVEC_MALLOC_TYPE, sizeof(VexGuestArchState));
 
-  io_vec->return_value.value = 0;
+  io_vec->return_value.value.type = se_memo_return_value;
+  io_vec->return_value.value.len = sizeof(RegWord);
+  io_vec->return_value.value.buf =
+      VG_(malloc)(SE_IOVEC_MALLOC_TYPE, io_vec->return_value.value.len);
   io_vec->return_value.is_ptr = False;
 
   return io_vec;
@@ -70,6 +73,9 @@ void SE_(free_io_vec)(SE_(io_vec) * io_vec) {
 
   if (io_vec->initial_register_state_map.buf)
     VG_(free)(io_vec->initial_register_state_map.buf);
+
+  if (io_vec->return_value.value.buf)
+    VG_(free)(io_vec->return_value.value.buf);
 
   VG_(free)(io_vec);
 }
@@ -107,7 +113,7 @@ SizeT SE_(io_vec_size)(SE_(io_vec) * io_vec) {
          + VG_(sizeRangeMap)(io_vec->expected_state.address_state) * 3 *
                sizeof(UWord) +
          /* Return value */
-         sizeof(io_vec->return_value) +
+         sizeof(SizeT) + io_vec->return_value.value.len + sizeof(Bool) +
          /* Register state map */
          sizeof(SizeT) + io_vec->initial_register_state_map.len +
          /* System calls */
@@ -191,9 +197,21 @@ SE_(io_vec) * SE_(read_io_vec_from_buf)(SizeT len, UChar *src) {
     (io_vec->expected_state.address_state, key_min, key_max, val);
   }
 
+  io_vec->return_value.value.type = se_memo_return_value;
   VG_(memcpy)
-  (&io_vec->return_value, src + bytes_read, sizeof(io_vec->return_value));
-  bytes_read += sizeof(io_vec->return_value);
+  (&io_vec->return_value.value.len, src + bytes_read,
+   sizeof(io_vec->return_value.value.len));
+  bytes_read += sizeof(io_vec->return_value.value.len);
+  io_vec->return_value.value.buf =
+      VG_(malloc)(SE_IOVEC_MALLOC_TYPE, io_vec->return_value.value.len);
+  VG_(memcpy)
+  (&io_vec->return_value.value.buf, src + bytes_read,
+   io_vec->return_value.value.len);
+  bytes_read += io_vec->return_value.value.len;
+  VG_(memcpy)
+  (&io_vec->return_value.is_ptr, src + bytes_read,
+   sizeof(io_vec->return_value.is_ptr));
+  bytes_read += sizeof(io_vec->return_value.is_ptr);
 
   io_vec->initial_register_state_map.type = se_memo_arch_state;
   VG_(memcpy)
@@ -298,7 +316,17 @@ void SE_(write_io_vec_to_buf)(SE_(io_vec) * io_vec,
 
   /* Return value */
   VG_(memcpy)
-  (data + bytes_written, &io_vec->return_value, sizeof(io_vec->return_value));
+  (data + bytes_written, &io_vec->return_value.value.len,
+   sizeof(io_vec->return_value.value.len));
+  bytes_written += sizeof(io_vec->return_value.value.len);
+  VG_(memcpy)
+  (data + bytes_written, io_vec->return_value.value.buf,
+   io_vec->return_value.value.len);
+  bytes_written += io_vec->return_value.value.len;
+  VG_(memcpy)
+  (data + bytes_written, &io_vec->return_value.is_ptr,
+   sizeof(io_vec->return_value.is_ptr));
+  bytes_written += sizeof(io_vec->return_value.is_ptr);
 
   /* initial_register_state_map */
   VG_(memcpy)
@@ -337,7 +365,7 @@ void SE_(ppIOVec)(SE_(io_vec) * io_vec) {
   VG_(printf)("host_endness: %s\n", LibVEX_ppVexEndness(io_vec->host_endness));
   VG_(printf)("random_seed:  %u\n", io_vec->random_seed);
   VG_(printf)
-  ("return_value: %lu %s\n", io_vec->return_value.value,
+  ("return_value: 0x%lx %s\n", *(RegWord *)io_vec->return_value.value.buf,
    io_vec->return_value.is_ptr ? "O" : "X");
 
   VG_(printf)("System Calls: ");
@@ -405,23 +433,26 @@ Bool SE_(current_state_matches_expected)(SE_(io_vec) * io_vec,
   }
 
   if (!expected_return->is_ptr) {
-    if ((Long)expected_return->value < 0 && (Long)return_value->value > 0) {
+    Long expected_val = *(Long *)expected_return->value.buf;
+    Long actual_val = *(Long *)return_value->value.buf;
+
+    if (expected_val < 0 && actual_val > 0) {
       return False;
     }
-    if ((Long)expected_return->value > 0 && (Long)return_value->value < 0) {
+    if (expected_val > 0 && actual_val < 0) {
       return False;
     }
-    if (expected_return->value == 0 && return_value->value != 0) {
+    if (expected_val == 0 && actual_val != 0) {
       return False;
     }
-    if (expected_return->value != 0 && return_value->value == 0) {
+    if (expected_val != 0 && actual_val == 0) {
       return False;
     }
   }
 
   /* Check address state */
   UInt size = VG_(sizeRangeMap)(io_vec->initial_state.address_state);
-  Bool in_obj;
+  Bool in_obj = False;
   for (UInt i = 0; i < size; i++) {
     UWord addr_min, addr_max, val;
     VG_(indexRangeMap)

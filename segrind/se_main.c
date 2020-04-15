@@ -128,10 +128,10 @@ static SizeT SE_(write_io_vec_to_cmd_server)(SE_(io_vec) * io_vec,
   tl_assert(SE_(command_server));
   tl_assert(io_vec);
 
+  SE_(ppIOVec)(io_vec);
+
   SizeT bytes_written = SE_(write_io_vec_to_fd)(
       SE_(command_server)->executor_pipe[1], SEMSG_OK, io_vec);
-
-  SE_(ppIOVec)(io_vec);
 
   if (free_io_vec) {
     SE_(free_io_vec)(io_vec);
@@ -187,17 +187,21 @@ static void extract_return(VexArch arch, SE_(return_value) * return_value,
   case VexArchX86:
   case VexArchAMD64:
   case VexArchARM64:
-    return_value->value =
+    *(RegWord *)return_value->value.buf =
         *(RegWord *)(program_state->register_state.buf + SE_offB_RET);
+    return_value->value.len = sizeof(RegWord);
     break;
   default:
     tl_assert2(0, "Unsupported return gathering architecture: %u\n", arch);
   }
 
   return_value->is_ptr =
-      VG_(am_is_valid_for_client)(return_value->value, 1, VKI_PROT_READ) ||
-      VG_(am_is_valid_for_client)(return_value->value, 1, VKI_PROT_WRITE) ||
-      VG_(am_is_valid_for_client)(return_value->value, 1, VKI_PROT_EXEC);
+      VG_(am_is_valid_for_client)(*(Addr *)return_value->value.buf, 1,
+                                  VKI_PROT_READ) ||
+      VG_(am_is_valid_for_client)(*(Addr *)return_value->value.buf, 1,
+                                  VKI_PROT_WRITE) ||
+      VG_(am_is_valid_for_client)(*(Addr *)return_value->value.buf, 1,
+                                  VKI_PROT_EXEC);
 }
 
 /**
@@ -696,7 +700,7 @@ static void jump_to_target_function(void) {
     (target_id, (UChar *)&current_state, 0, 0, sizeof(current_state));
 
     SE_(write_msg_to_commander)
-    (SEMSG_OK, sizeof(current_state), &current_state);
+    (SEMSG_OK, sizeof(current_state), (UChar *)&current_state);
     SE_(cleanup_and_exit)();
   }
 

@@ -60,7 +60,8 @@ typedef enum _memorized_obj_type {
   se_memo_invalid,
   se_memo_io_vec,
   se_memo_oset_word,
-  se_memo_arch_state
+  se_memo_arch_state,
+  se_memo_return_value
 } SE_(memoized_type);
 
 typedef struct memoized_object {

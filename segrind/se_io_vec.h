@@ -26,7 +26,7 @@ typedef struct se_program_state_ {
 } SE_(program_state);
 
 typedef struct se_return_value_ {
-  RegWord value;
+  SE_(memoized_object) value;
   Bool is_ptr;
 } SE_(return_value);
 

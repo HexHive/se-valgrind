@@ -34,6 +34,7 @@ void SE_(ppMemoizedObject)(SE_(memoized_object) * obj) {
 
   SizeT idx;
   UInt col_count = 0;
+  UChar printed_chars = 0;
   const Int max_cols = 4;
 
   const HChar *start_fmt = "========================================= %s "
@@ -48,6 +49,19 @@ void SE_(ppMemoizedObject)(SE_(memoized_object) * obj) {
     goto finish;
   case se_memo_oset_word:
     VG_(printf)(start_fmt, " OSetWord ");
+    goto finish;
+  case se_memo_return_value:
+    VG_(printf)(start_fmt, "  Return  ");
+    for (idx = 0; idx < obj->len; idx++) {
+      if (idx == 0) {
+        VG_(printf)("0x");
+      } else if (printed_chars >= (2 * sizeof(ULong))) {
+        printed_chars = 0;
+        VG_(printf)(" 0x");
+      }
+      VG_(printf)("%02x", obj->buf[idx]);
+      printed_chars += 2;
+    }
     goto finish;
   case se_memo_arch_state:
     VG_(printf)(start_fmt, "Reg  State");
