@@ -180,6 +180,11 @@ static Bool handle_set_target_cmd(SE_(cmd_msg) * msg,
   return False;
 }
 
+/**
+ * @brief Sets allocated areas to random values based on the seed
+ * @param io_vec
+ * @param seed
+ */
 static void fuzz_input_pointers(SE_(io_vec) * io_vec, UInt *seed) {
   tl_assert(io_vec);
   tl_assert(seed);
@@ -209,6 +214,11 @@ static void fuzz_input_pointers(SE_(io_vec) * io_vec, UInt *seed) {
   }
 }
 
+/**
+ * @brief Randomly sets the GPRs to a value based on the seed
+ * @param io_vec
+ * @param seed
+ */
 static void fuzz_registers(SE_(io_vec) * io_vec, UInt *seed) {
   tl_assert(io_vec);
   tl_assert(seed);
@@ -260,6 +270,13 @@ static Bool fuzz_program_state(SE_(cmd_server) * server) {
   return SE_(set_server_state)(server, SERVER_WAITING_TO_EXECUTE);
 }
 
+/**
+ * @brief Reads in the IOVec from cmd_msg, allocates areas specified, and
+ * sets those memory areas according to the seed
+ * @param server
+ * @param cmd_msg
+ * @return
+ */
 static Bool handle_set_io_vec(SE_(cmd_server) * server,
                               SE_(cmd_msg) * cmd_msg) {
   tl_assert(server);
@@ -311,14 +328,15 @@ static Bool handle_set_io_vec(SE_(cmd_server) * server,
   fuzz_input_pointers(server->current_io_vec, &seed);
   /* No need to fuzz registers, since the ''fuzzed`` registers come in with
    * the initial state */
-  //  fuzz_registers(server->current_io_vec, &seed);
 
   //  SE_(ppIOVec)(server->current_io_vec);
 
   server->using_existing_io_vec = True;
   server->using_fuzzed_io_vec = False;
 
-  return SE_(set_server_state)(server, SERVER_WAIT_FOR_CMD);
+  return SE_(set_server_state)(server, server->target_func_addr > 0
+                                           ? SERVER_WAITING_TO_EXECUTE
+                                           : SERVER_WAIT_FOR_CMD);
 }
 
 /**

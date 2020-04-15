@@ -21,6 +21,7 @@ extern void vexSetAllocModeTEMP_and_clear(void);
 #define SE_offB_CMSTART offsetof(VexGuestX86State, guest_CMSTART)
 #define SE_offB_CMLEN offsetof(VexGuestX86State, guest_CMLEN)
 #define SE_offB_GUEST_IP offsetof(VexGuestX86State, guest_EIP)
+#define SE_offB_RET offsetof(VexGuestX86State, guest_EAX)
 #define SE_szB_GUEST_IP sizeof(((VexGuestX86State *)0)->guest_EIP)
 #define SE_GUEST_WORD_TYPE Ity_I32
 #define SE_O_GPRS                                                              \
@@ -39,6 +40,7 @@ extern void vexSetAllocModeTEMP_and_clear(void);
 #define SE_offB_CMSTART offsetof(VexGuestAMD64State, guest_CMSTART)
 #define SE_offB_CMLEN offsetof(VexGuestAMD64State, guest_CMLEN)
 #define SE_offB_GUEST_IP offsetof(VexGuestAMD64State, guest_RIP)
+#define SE_offB_RET offsetof(VexGuestAMD64State, guest_RAX)
 #define SE_szB_GUEST_IP sizeof(((VexGuestAMD64State *)0)->guest_RIP)
 #define SE_GUEST_WORD_TYPE Ity_I64
 #define SE_O_GPRS                                                              \
@@ -66,6 +68,7 @@ extern void vexSetAllocModeTEMP_and_clear(void);
 #define SE_offB_CMLEN offsetof(VexGuestPPC32State, guest_CMLEN)
 #define SE_offB_GUEST_IP offsetof(VexGuestPPC32State, guest_CIA)
 #define SE_szB_GUEST_IP sizeof(((VexGuestPPC32State *)0)->guest_CIA)
+
 #define SE_GUEST_WORD_TYPE Ity_I32
 #elif defined(VGA_ppc64be) || defined(VGA_ppc64le)
 #include "../VEX/priv/guest_ppc_defs.h"
@@ -91,6 +94,20 @@ extern void vexSetAllocModeTEMP_and_clear(void);
 #define SE_offB_GUEST_IP offsetof(VexGuestARM64State, guest_PC)
 #define SE_szB_GUEST_IP sizeof(((VexGuestARM64State *)0)->guest_PC)
 #define SE_GUEST_WORD_TYPE Ity_I64
+#define SE_offB_RET offsetof(VexGuestX86State, guest_X0)
+#define SE_O_GPRS                                                              \
+  {                                                                            \
+    offsetof(VexGuestArchState, guest_X0),                                     \
+        offsetof(VexGuestArchState, guest_X1),                                 \
+        offsetof(VexGuestArchState, guest_X2),                                 \
+        offsetof(VexGuestArchState, guest_X3),                                 \
+        offsetof(VexGuestArchState, guest_X4),                                 \
+        offsetof(VexGuestArchState, guest_X5)                                  \
+            offsetof(VexGuestArchState, guest_X6)                              \
+                offsetof(VexGuestArchState, guest_X7)                          \
+  }
+#define SE_NUM_GPRS 8
+
 #elif defined(VGA_s390x)
 #include "../VEX/priv/guest_s390_defs.h"
 #define SE_DISASM_TO_IR disInstr_S390

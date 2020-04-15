@@ -3,10 +3,12 @@
 //
 
 #include "se_io_vec.h"
-#include "pub_tool_machine.h"
-#include "pub_tool_mallocfree.h"
 #include "se_command.h"
 #include "se_utils.h"
+
+#include "pub_tool_aspacemgr.h"
+#include "pub_tool_machine.h"
+#include "pub_tool_mallocfree.h"
 
 const HChar *SE_IOVEC_MALLOC_TYPE = "SE_(io_vec)";
 
@@ -43,17 +45,8 @@ SE_(io_vec) * SE_(create_io_vec)(void) {
   io_vec->initial_register_state_map.buf =
       VG_(malloc)(SE_IOVEC_MALLOC_TYPE, sizeof(VexGuestArchState));
 
-  //  Int offset = VG_O_STACK_PTR;
-  //  *(Addr *)(&io_vec->initial_register_state_map.buf[offset]) =
-  //      OBJ_ALLOCATED_MAGIC;
-  //
-  //  offset = VG_O_INSTR_PTR;
-  //  *(Addr *)(&io_vec->initial_register_state_map.buf[offset]) =
-  //      OBJ_ALLOCATED_MAGIC;
-  //
-  //  offset = VG_O_FRAME_PTR;
-  //  *(Addr *)(&io_vec->initial_register_state_map.buf[offset]) =
-  //      OBJ_ALLOCATED_MAGIC;
+  io_vec->return_value.value = 0;
+  io_vec->return_value.is_ptr = False;
 
   return io_vec;
 }
@@ -113,6 +106,8 @@ SizeT SE_(io_vec_size)(SE_(io_vec) * io_vec) {
          sizeof(UInt) /* Size of address map */
          + VG_(sizeRangeMap)(io_vec->expected_state.address_state) * 3 *
                sizeof(UWord) +
+         /* Return value */
+         sizeof(io_vec->return_value) +
          /* Register state map */
          sizeof(SizeT) + io_vec->initial_register_state_map.len +
          /* System calls */
@@ -195,6 +190,10 @@ SE_(io_vec) * SE_(read_io_vec_from_buf)(SizeT len, UChar *src) {
     VG_(bindRangeMap)
     (io_vec->expected_state.address_state, key_min, key_max, val);
   }
+
+  VG_(memcpy)
+  (&io_vec->return_value, src + bytes_read, sizeof(io_vec->return_value));
+  bytes_read += sizeof(io_vec->return_value);
 
   io_vec->initial_register_state_map.type = se_memo_arch_state;
   VG_(memcpy)
@@ -297,6 +296,10 @@ void SE_(write_io_vec_to_buf)(SE_(io_vec) * io_vec,
     bytes_written += sizeof(val);
   }
 
+  /* Return value */
+  VG_(memcpy)
+  (data + bytes_written, &io_vec->return_value, sizeof(io_vec->return_value));
+
   /* initial_register_state_map */
   VG_(memcpy)
   (data + bytes_written, &io_vec->initial_register_state_map.len,
@@ -333,6 +336,9 @@ void SE_(ppIOVec)(SE_(io_vec) * io_vec) {
   VG_(printf)("host_arch:    %s\n", LibVEX_ppVexArch(io_vec->host_arch));
   VG_(printf)("host_endness: %s\n", LibVEX_ppVexEndness(io_vec->host_endness));
   VG_(printf)("random_seed:  %u\n", io_vec->random_seed);
+  VG_(printf)
+  ("return_value: %lu %s\n", io_vec->return_value.value,
+   io_vec->return_value.is_ptr ? "O" : "X");
 
   VG_(printf)("System Calls: ");
   UWord syscall;
@@ -384,4 +390,72 @@ void SE_(ppProgramState)(SE_(program_state) * program_state) {
   }
 
   SE_(ppMemoizedObject)(&program_state->register_state);
+}
+
+Bool SE_(current_state_matches_expected)(SE_(io_vec) * io_vec,
+                                         SE_(return_value) * return_value) {
+  tl_assert(io_vec);
+  tl_assert(return_value);
+
+  SE_(return_value) *expected_return = &io_vec->return_value;
+
+  // Check return values
+  if (expected_return->is_ptr != return_value->is_ptr) {
+    return False;
+  }
+
+  if (!expected_return->is_ptr) {
+    if ((Long)expected_return->value < 0 && (Long)return_value->value > 0) {
+      return False;
+    }
+    if ((Long)expected_return->value > 0 && (Long)return_value->value < 0) {
+      return False;
+    }
+    if (expected_return->value == 0 && return_value->value != 0) {
+      return False;
+    }
+    if (expected_return->value != 0 && return_value->value == 0) {
+      return False;
+    }
+  }
+
+  /* Check address state */
+  UInt size = VG_(sizeRangeMap)(io_vec->initial_state.address_state);
+  Bool in_obj;
+  for (UInt i = 0; i < size; i++) {
+    UWord addr_min, addr_max, val;
+    VG_(indexRangeMap)
+    (&addr_min, &addr_max, &val, io_vec->initial_state.address_state, i);
+    if (val & OBJ_START_MAGIC) {
+      in_obj = True;
+    }
+    if (in_obj && !(val & ALLOCATED_SUBPTR_MAGIC)) {
+      UWord expected_min_addr, expected_max_addr, expected_val;
+      for (UWord current_addr = addr_min; current_addr <= addr_max;
+           current_addr++) {
+        VG_(lookupRangeMap)
+        (&expected_min_addr, &expected_max_addr, &expected_val,
+         io_vec->expected_state.address_state, current_addr);
+        if (VG_(memcmp)((void *)current_addr, &expected_val, 1) != 0) {
+          return False;
+        }
+      }
+    } else if (in_obj && (val & ALLOCATED_SUBPTR_MAGIC)) {
+      /* All allocated pointers should be valid, so if this current value
+       * is not valid, then it has been overwritten with data */
+      Addr current_addr = *(Addr *)addr_min;
+      Bool is_valid =
+          VG_(am_is_valid_for_client)(current_addr, 1, VKI_PROT_READ) ||
+          VG_(am_is_valid_for_client)(current_addr, 1, VKI_PROT_WRITE) ||
+          VG_(am_is_valid_for_client)(current_addr, 1, VKI_PROT_EXEC);
+      if (!is_valid) {
+        return False;
+      }
+    }
+    if (val & OBJ_END_MAGIC) {
+      in_obj = False;
+    }
+  }
+
+  return True;
 }

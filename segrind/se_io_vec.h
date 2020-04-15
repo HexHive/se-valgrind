@@ -25,6 +25,11 @@ typedef struct se_program_state_ {
   RangeMap *address_state; /* Which addresses are allocated as objects */
 } SE_(program_state);
 
+typedef struct se_return_value_ {
+  RegWord value;
+  Bool is_ptr;
+} SE_(return_value);
+
 typedef struct io_vec {
   VexArch host_arch;       /* Architecture that generated this IOVec */
   VexEndness host_endness; /* Endianess of generation machine */
@@ -32,6 +37,8 @@ typedef struct io_vec {
 
   SE_(program_state) initial_state;  /* Initial program state */
   SE_(program_state) expected_state; /* State expected post-execution */
+
+  SE_(return_value) return_value;
 
   /* Maps which parts of the register states are pointers */
   SE_(memoized_object) initial_register_state_map;
@@ -99,5 +106,14 @@ void SE_(ppIOVec)(SE_(io_vec) * io_vec);
  * @param program_state
  */
 void SE_(ppProgramState)(SE_(program_state) * program_state);
+
+/**
+ * @brief Returns true if the current program state matches the expected state
+ * @param io_vec
+ * @param return_value
+ * @return
+ */
+Bool SE_(current_state_matches_expected)(SE_(io_vec) * io_vec,
+                                         SE_(return_value) * return_value);
 
 #endif // SE_VALGRIND_SE_IO_VEC_H

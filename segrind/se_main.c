@@ -91,10 +91,31 @@ static Int recursive_target_call_count = 0;
 
 static void SE_(report_failure_to_commander)(void);
 static void SE_(report_too_many_instrs_to_commander)(void);
+static SizeT SE_(write_msg_to_commander)(SE_(cmd_msg_t) msgtype, SizeT data_len,
+                                         UChar *data);
 static void fix_address_space(void);
 static IRDirty *make_call_to_record_current_state(Addr, IRType);
 static IRDirty *make_call_to_jump_to_target(void);
 static IRDirty *make_call_to_report_success(void);
+
+/**
+ * @brief Creates and sends a message to the command server
+ * @param msgtype
+ * @param data_len
+ * @param data
+ * @return number of bytes written to commander
+ */
+static SizeT SE_(write_msg_to_commander)(SE_(cmd_msg_t) msgtype, SizeT data_len,
+                                         UChar *data) {
+  tl_assert(SE_(command_server));
+  tl_assert(msgtype != SEMSG_INVALID);
+  tl_assert(data_len == 0 || (data_len > 0 && data));
+  tl_assert(client_running);
+
+  return SE_(write_msg_to_fd)(SE_(command_server)->executor_pipe[1],
+                              SE_(create_cmd_msg)(msgtype, data_len, data),
+                              True);
+}
 
 /**
  * @brief Writes SEMSG_OK msg with io_vec to the commander process
@@ -152,6 +173,34 @@ static SizeT SE_(write_coverage_to_cmd_server)(void) {
 }
 
 /**
+ * @brief Sets the return value member from the input program state
+ * @param arch
+ * @param return_value
+ * @param program_state
+ */
+static void extract_return(VexArch arch, SE_(return_value) * return_value,
+                           SE_(program_state) * program_state) {
+  tl_assert(return_value);
+  tl_assert(program_state);
+
+  switch (arch) {
+  case VexArchX86:
+  case VexArchAMD64:
+  case VexArchARM64:
+    return_value->value =
+        *(RegWord *)(program_state->register_state.buf + SE_offB_RET);
+    break;
+  default:
+    tl_assert2(0, "Unsupported return gathering architecture: %u\n", arch);
+  }
+
+  return_value->is_ptr =
+      VG_(am_is_valid_for_client)(return_value->value, 1, VKI_PROT_READ) ||
+      VG_(am_is_valid_for_client)(return_value->value, 1, VKI_PROT_WRITE) ||
+      VG_(am_is_valid_for_client)(return_value->value, 1, VKI_PROT_EXEC);
+}
+
+/**
  * @brief Records the executed system calls to SE_(current_io_vec),
  * captures the current program state in the expected_state member, then
  * writes the IOVec to the commander process
@@ -166,6 +215,10 @@ static void SE_(send_fuzzed_io_vec)(void) {
   (target_id,
    SE_(command_server)->current_io_vec->expected_state.register_state.buf, 0, 0,
    SE_(command_server)->current_io_vec->expected_state.register_state.len);
+
+  extract_return(SE_(command_server)->current_io_vec->host_arch,
+                 &SE_(command_server)->current_io_vec->return_value,
+                 &SE_(command_server)->current_io_vec->expected_state);
 
   //  SE_(ppIOVec)(SE_(command_server)->current_io_vec);
 
@@ -445,8 +498,7 @@ static void fix_address_space() {
     offset += sizeof(*loc);
   }
 
-  SE_(cmd_msg) *msg = SE_(create_cmd_msg)(SEMSG_NEW_ALLOC, buf_size, buf);
-  SE_(write_msg_to_fd)(SE_(command_server)->executor_pipe[1], msg, True);
+  SE_(write_msg_to_commander)(SEMSG_NEW_ALLOC, buf_size, buf);
   VG_(free)(buf);
 
   SE_(end_taint_analysis)();
@@ -534,41 +586,55 @@ static void SE_(maybe_report_success_to_commader)(void) {
     return;
   }
 
-  if (SE_(command_server)->using_fuzzed_io_vec &&
-      SE_(command_server)->current_state != SERVER_GETTING_INIT_STATE) {
-    SE_(send_fuzzed_io_vec)();
-  }
+  if (SE_(command_server)->current_state != SERVER_GETTING_INIT_STATE) {
+    if (SE_(command_server)->using_fuzzed_io_vec) {
+      SE_(send_fuzzed_io_vec)();
+    } else if (SE_(command_server)->using_existing_io_vec) {
+      VexGuestArchState *last_state =
+          VG_(indexXA)(program_states, VG_(sizeXA)(program_states) - 1);
+      VexArch host_arch;
+      VexArchInfo host_arch_info;
+      SE_(return_value) return_value;
+      SE_(program_state) end_state;
 
-  if (SE_(command_server)->needs_coverage &&
-      SE_(command_server)->current_state != SERVER_GETTING_INIT_STATE) {
-    SE_(write_coverage_to_cmd_server)();
+      VG_(machine_get_VexArchInfo)(&host_arch, &host_arch_info);
+
+      end_state.register_state.buf = (UChar *)last_state;
+      end_state.register_state.len = sizeof(last_state);
+      end_state.register_state.type = se_memo_arch_state;
+      extract_return(host_arch, &return_value, &end_state);
+
+      if (!SE_(current_state_matches_expected)(
+              SE_(command_server)->current_io_vec, &return_value)) {
+        SE_(report_failure_to_commander)();
+      } else {
+        SE_(write_msg_to_commander)(SEMSG_OK, 0, NULL);
+      }
+    }
+
+    if (SE_(command_server)->needs_coverage) {
+      SE_(write_coverage_to_cmd_server)();
+    }
   }
 
   SE_(cleanup_and_exit)();
 }
 
 /**
- * @brief Writes SEMSG_FAIL to commander process
+ * @brief Writes SEMSG_FAIL to commander process and calls cleanup_and_exit
  */
 static void SE_(report_failure_to_commander)(void) {
-  tl_assert(client_running);
-
-  SE_(write_msg_to_fd)
-  (SE_(command_server)->executor_pipe[1],
-   SE_(create_cmd_msg)(SEMSG_FAIL, 0, NULL), True);
+  SE_(write_msg_to_commander)(SEMSG_FAIL, 0, NULL);
 
   SE_(cleanup_and_exit)();
 }
 
 /**
- * @brief Write SEMSG_TOO_MANY_INS to commander process
+ * @brief Write SEMSG_TOO_MANY_INS to commander process, and calls
+ * cleanup_and_exit
  */
 static void SE_(report_too_many_instrs_to_commander)(void) {
-  tl_assert(client_running);
-
-  SE_(write_msg_to_fd)
-  (SE_(command_server)->executor_pipe[1],
-   SE_(create_cmd_msg)(SEMSG_TOO_MANY_INS, 0, NULL), True);
+  SE_(write_msg_to_commander)(SEMSG_TOO_MANY_INS, 0, NULL);
 
   SE_(cleanup_and_exit)();
 }
@@ -629,9 +695,8 @@ static void jump_to_target_function(void) {
     VG_(get_shadow_regs_area)
     (target_id, (UChar *)&current_state, 0, 0, sizeof(current_state));
 
-    SE_(cmd_msg) *cmd_msg =
-        SE_(create_cmd_msg)(SEMSG_OK, sizeof(current_state), &current_state);
-    SE_(write_msg_to_fd)(SE_(command_server)->executor_pipe[1], cmd_msg, True);
+    SE_(write_msg_to_commander)
+    (SEMSG_OK, sizeof(current_state), &current_state);
     SE_(cleanup_and_exit)();
   }
 
@@ -683,6 +748,12 @@ static Bool is_last_IMark(Int idx, Int max, IRStmt **stmts) {
   return True;
 }
 
+/**
+ * @brief Makes an IRDirty to call record_current_state
+ * @param addr
+ * @param hWordType
+ * @return
+ */
 static IRDirty *make_call_to_record_current_state(Addr addr, IRType hWordType) {
   IRConst *irConst;
 
@@ -709,6 +780,10 @@ static IRDirty *make_call_to_record_current_state(Addr addr, IRType hWordType) {
   return di;
 }
 
+/**
+ * @brief Makes an IRDirty to call jump_to_target_function
+ * @return
+ */
 static IRDirty *make_call_to_jump_to_target() {
   IRDirty *di = unsafeIRDirty_0_N(
       0, "jump_to_target_function",
@@ -726,8 +801,13 @@ static IRDirty *make_call_to_jump_to_target() {
   return di;
 }
 
+/**
+ * @brief Makes an IRDirty to call maybe_report_success_to_commander
+ * @return
+ */
 static IRDirty *make_call_to_report_success() {
-  IRDirty *di = unsafeIRDirty_0_N(
+  IRDirty *di;
+  di = unsafeIRDirty_0_N(
       0, "maybe_report_success_to_commader",
       VG_(fnptr_to_fnentry)(&SE_(maybe_report_success_to_commader)),
       mkIRExprVec_0());
