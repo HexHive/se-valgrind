@@ -205,7 +205,7 @@ SE_(io_vec) * SE_(read_io_vec_from_buf)(SizeT len, UChar *src) {
   io_vec->return_value.value.buf =
       VG_(malloc)(SE_IOVEC_MALLOC_TYPE, io_vec->return_value.value.len);
   VG_(memcpy)
-  (&io_vec->return_value.value.buf, src + bytes_read,
+  (io_vec->return_value.value.buf, src + bytes_read,
    io_vec->return_value.value.len);
   bytes_read += io_vec->return_value.value.len;
   VG_(memcpy)
@@ -364,9 +364,13 @@ void SE_(ppIOVec)(SE_(io_vec) * io_vec) {
   VG_(printf)("host_arch:    %s\n", LibVEX_ppVexArch(io_vec->host_arch));
   VG_(printf)("host_endness: %s\n", LibVEX_ppVexEndness(io_vec->host_endness));
   VG_(printf)("random_seed:  %u\n", io_vec->random_seed);
-  VG_(printf)
-  ("return_value: 0x%lx %s\n", *(RegWord *)io_vec->return_value.value.buf,
-   io_vec->return_value.is_ptr ? "O" : "X");
+  if (io_vec->return_value.value.buf) {
+    VG_(printf)
+    ("return_value: 0x%lx %s\n", *(RegWord *)io_vec->return_value.value.buf,
+     io_vec->return_value.is_ptr ? "O" : "X");
+  } else {
+    VG_(printf)("Return value is NULL\n");
+  }
 
   VG_(printf)("System Calls: ");
   UWord syscall;
@@ -396,25 +400,12 @@ void SE_(ppProgramState)(SE_(program_state) * program_state) {
   tl_assert(program_state);
 
   UWord idx = VG_(sizeRangeMap)(program_state->address_state);
-  Bool in_obj = False;
   VG_(printf)("Allocated addresses:\n");
   for (UWord i = 0; i < idx; i++) {
     UWord key_min, key_max, val;
     VG_(indexRangeMap)
     (&key_min, &key_max, &val, program_state->address_state, i);
-    if (val & OBJ_START_MAGIC) {
-      in_obj = True;
-      VG_(printf)("\t%p [", (void *)key_min);
-    }
-
-    if (in_obj && (val & ALLOCATED_SUBPTR_MAGIC)) {
-      VG_(printf)("PTR: [%016lx -- %016lx]\n", key_min, key_max);
-    }
-
-    if (val & OBJ_END_MAGIC) {
-      in_obj = False;
-      VG_(printf)("] %p\n", (void *)key_max);
-    }
+    VG_(printf)("\t0x%016lx -- 0x%016lx = %lu\n", key_min, key_max, val);
   }
 
   SE_(ppMemoizedObject)(&program_state->register_state);

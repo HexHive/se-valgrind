@@ -295,7 +295,7 @@ static Bool handle_set_io_vec(SE_(cmd_server) * server,
   server->current_io_vec =
       SE_(read_io_vec_from_buf)(cmd_msg->length, (UChar *)cmd_msg->data);
 
-  //  SE_(ppIOVec)(server->current_io_vec);
+  SE_(ppIOVec)(server->current_io_vec);
   UInt seed = server->current_io_vec->random_seed;
 
   /* Establish valid memory state */

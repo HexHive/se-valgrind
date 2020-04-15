@@ -204,6 +204,24 @@ static void extract_return(VexArch arch, SE_(return_value) * return_value,
                                   VKI_PROT_EXEC);
 }
 
+static void copy_pointer_data(SE_(io_vec) * io_vec) {
+  UWord addr_min, addr_max, val;
+  UInt size = VG_(sizeRangeMap)(io_vec->initial_state.address_state);
+  for (UInt i = 0; i < size; i++) {
+    VG_(indexRangeMap)
+    (&addr_min, &addr_max, &val, io_vec->initial_state.address_state, i);
+    VG_(printf)("%p -- %p = %lu\n", (void *)addr_min, (void *)addr_max, val);
+    if (val != 0 && (val & OBJ_ALLOCATED_MAGIC) &&
+        !(val & ALLOCATED_SUBPTR_MAGIC)) {
+      for (UWord curr = addr_min; curr <= addr_max; curr++) {
+        UChar byte = *(UChar *)curr;
+        VG_(bindRangeMap)
+        (io_vec->expected_state.address_state, curr, curr, (UWord)byte);
+      }
+    }
+  }
+}
+
 /**
  * @brief Records the executed system calls to SE_(current_io_vec),
  * captures the current program state in the expected_state member, then
@@ -223,6 +241,8 @@ static void SE_(send_fuzzed_io_vec)(void) {
   extract_return(SE_(command_server)->current_io_vec->host_arch,
                  &SE_(command_server)->current_io_vec->return_value,
                  &SE_(command_server)->current_io_vec->expected_state);
+
+  copy_pointer_data(SE_(command_server)->current_io_vec);
 
   //  SE_(ppIOVec)(SE_(command_server)->current_io_vec);
 
@@ -663,13 +683,13 @@ static void record_current_state(Addr addr) {
     VG_(get_shadow_regs_area)
     (target_id, (UChar *)&current_state, 0, 0, sizeof(current_state));
 
-    //    const HChar *fnname;
-    //    VG_(get_fnname)
-    //    (VG_(current_DiEpoch)(), current_state.VG_INSTR_PTR, &fnname);
-    //    VG_(umsg)
-    //    ("Recording state for %p/%p (%s)\n", (void
-    //    *)current_state.VG_INSTR_PTR,
-    //     (void *)addr, fnname);
+    //        const HChar *fnname;
+    //        VG_(get_fnname)
+    //        (VG_(current_DiEpoch)(), current_state.VG_INSTR_PTR, &fnname);
+    //        VG_(umsg)
+    //        ("Recording state for %p/%p (%s)\n", (void
+    //        *)current_state.VG_INSTR_PTR,
+    //         (void *)addr, fnname);
 
     current_state.VG_INSTR_PTR = addr;
 
