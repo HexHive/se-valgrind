@@ -61,34 +61,26 @@ SE_(io_vec) * SE_(create_io_vec)(void) {
 }
 
 void SE_(free_io_vec)(SE_(io_vec) * io_vec) {
+  VG_(printf)("freeing iovec\n");
   tl_assert(io_vec);
-  if (io_vec->system_calls)
-    VG_(OSetWord_Destroy)(io_vec->system_calls);
-
-  if (io_vec->initial_state.address_state)
-    VG_(deleteRangeMap)(io_vec->initial_state.address_state);
-
-  if (io_vec->expected_state)
-    VG_(deleteRangeMap)(io_vec->expected_state);
 
   if (io_vec->initial_state.register_state)
     VG_(deleteXA)(io_vec->initial_state.register_state);
 
-  if (io_vec->expected_state) {
+  if (io_vec->initial_state.address_state)
+    VG_(deleteRangeMap)(io_vec->initial_state.address_state);
+
+  if (io_vec->initial_state.pointer_locations)
+    VG_(deleteRangeMap)(io_vec->initial_state.pointer_locations);
+
+  if (io_vec->expected_state)
     VG_(deleteRangeMap)(io_vec->expected_state);
-  }
-
-  //  if (io_vec->expected_state.register_state.buf)
-  //    VG_(free)(io_vec->expected_state.register_state.buf);
-
-  //  if (io_vec->initial_register_state_map.buf)
-  //    VG_(free)(io_vec->initial_register_state_map.buf);
 
   if (io_vec->return_value.value.buf)
     VG_(free)(io_vec->return_value.value.buf);
 
-  if (io_vec->initial_state.pointer_locations)
-    VG_(deleteRangeMap)(io_vec->initial_state.pointer_locations);
+  if (io_vec->system_calls)
+    VG_(OSetWord_Destroy)(io_vec->system_calls);
 
   VG_(free)(io_vec);
 }
