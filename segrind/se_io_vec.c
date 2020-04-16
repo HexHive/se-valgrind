@@ -61,7 +61,6 @@ SE_(io_vec) * SE_(create_io_vec)(void) {
 }
 
 void SE_(free_io_vec)(SE_(io_vec) * io_vec) {
-  VG_(printf)("freeing iovec\n");
   tl_assert(io_vec);
 
   if (io_vec->initial_state.register_state)

@@ -728,7 +728,7 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
       for (UInt j = 0;
            j <
            VG_(sizeXA)(server->current_io_vec->initial_state.register_state);
-           i++) {
+           j++) {
         SE_(register_value) *tmp = VG_(indexXA)(
             server->current_io_vec->initial_state.register_state, j);
         if (tmp->guest_state_offset == tainted_loc.location.offset) {
@@ -791,9 +791,9 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
           VG_(umsg)("Failed to allocate new object\n");
           return False;
         }
-        //        VG_(printf)
-        //        ("Setting register %d to %p\n", tainted_loc.location.offset,
-        //         (void *)(obj_loc));
+        VG_(printf)
+        ("Setting register %d to %p\n", tainted_loc.location.offset,
+         (void *)(obj_loc));
         reg_val->is_ptr = True;
         reg_val->value = obj_loc;
       }
