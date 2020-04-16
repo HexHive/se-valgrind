@@ -228,19 +228,37 @@ static void fuzz_registers(SE_(io_vec) * io_vec, UInt *seed) {
   Int gpr_offsets[] = SE_O_GPRS;
   for (Int i = 0; i < SE_NUM_GPRS; i++) {
     Int current_offset = gpr_offsets[i];
-    RegWord reg_val =
-        *(RegWord *)(&io_vec->initial_register_state_map.buf[current_offset]);
-    if (reg_val != OBJ_ALLOCATED_MAGIC) {
+    SE_(register_value) *reg_val = NULL;
+    for (Word j = 0; i < VG_(sizeXA)(io_vec->initial_state.register_state);
+         j++) {
+      SE_(register_value) *tmp =
+          VG_(indexXA)(io_vec->initial_state.register_state, j);
+      if (tmp->guest_state_offset == current_offset) {
+        reg_val = tmp;
+        break;
+      }
+    }
+    if (!reg_val) {
+      SE_(register_value) new_val;
+      new_val.guest_state_offset = current_offset;
+      new_val.is_ptr = False;
+      new_val.value = 0;
+      VG_(addToXA)(io_vec->initial_state.register_state, &new_val);
+      reg_val =
+          VG_(indexXA)(io_vec->initial_state.register_state,
+                       VG_(sizeXA)(io_vec->initial_state.register_state) - 1);
+    }
+
+    if (!reg_val->is_ptr) {
       SE_(fuzz_region)
-      (seed, (Addr)(io_vec->initial_state.register_state.buf + current_offset),
-       (Addr)(io_vec->initial_state.register_state.buf + current_offset +
-              sizeof(RegWord) - 1));
+      (seed, (Addr)&reg_val->value,
+       (Addr)&reg_val->value + sizeof(reg_val->value) - 1);
     }
   }
 }
 
 /**
- * @brief Fuzzes and sets the guest program state
+ * @brief Fuzzes values for GPRs and allocated memory
  * @param server
  * @return True if program state was successfully fuzzed
  */
@@ -260,12 +278,12 @@ static Bool fuzz_program_state(SE_(cmd_server) * server) {
   fuzz_input_pointers(server->current_io_vec, &SE_(seed));
   fuzz_registers(server->current_io_vec, &SE_(seed));
 
-  VG_(memcpy)
-  (&server->current_io_vec->initial_state.register_state.buf[VG_O_FRAME_PTR],
-   &server->initial_frame_ptr, sizeof(server->initial_frame_ptr));
-  VG_(memcpy)
-  (&server->current_io_vec->initial_state.register_state.buf[VG_O_STACK_PTR],
-   &server->initial_stack_ptr, sizeof(server->initial_stack_ptr));
+  //  VG_(memcpy)
+  //  (&server->current_io_vec->initial_state.register_state.buf[VG_O_FRAME_PTR],
+  //   &server->initial_frame_ptr, sizeof(server->initial_frame_ptr));
+  //  VG_(memcpy)
+  //  (&server->current_io_vec->initial_state.register_state.buf[VG_O_STACK_PTR],
+  //   &server->initial_stack_ptr, sizeof(server->initial_stack_ptr));
 
   return SE_(set_server_state)(server, SERVER_WAITING_TO_EXECUTE);
 }
@@ -295,7 +313,7 @@ static Bool handle_set_io_vec(SE_(cmd_server) * server,
   server->current_io_vec =
       SE_(read_io_vec_from_buf)(cmd_msg->length, (UChar *)cmd_msg->data);
 
-  SE_(ppIOVec)(server->current_io_vec);
+  //  SE_(ppIOVec)(server->current_io_vec);
   UInt seed = server->current_io_vec->random_seed;
 
   /* Establish valid memory state */
@@ -328,6 +346,19 @@ static Bool handle_set_io_vec(SE_(cmd_server) * server,
   fuzz_input_pointers(server->current_io_vec, &seed);
   /* No need to fuzz registers, since the ''fuzzed`` registers come in with
    * the initial state */
+  for (UInt i = 0;
+       i < VG_(sizeRangeMap)(
+               server->current_io_vec->initial_state.pointer_locations);
+       i++) {
+    UWord addr_min, addr_max, val;
+    VG_(indexRangeMap)
+    (&addr_min, &addr_max, &val,
+     server->current_io_vec->initial_state.pointer_locations, i);
+    if (val > 0) {
+      tl_assert(sizeof(val) >= (addr_max - addr_min));
+      VG_(memcpy)((void *)addr_min, &val, addr_max - addr_min);
+    }
+  }
 
   //  SE_(ppIOVec)(server->current_io_vec);
 
@@ -572,6 +603,9 @@ static void set_pointer_submember(SE_(cmd_server) * server, Addr obj_start,
     (server->current_io_vec->initial_state.address_state, pointer_start + i,
      pointer_start + i, val);
   }
+  VG_(bindRangeMap)
+  (server->current_io_vec->initial_state.pointer_locations,
+   (UWord)pointer_start, (UWord)pointer_start + sizeof(Addr), ptr_val);
 
   VG_(memcpy)((void *)pointer_start, &ptr_val, sizeof(Addr));
 }
@@ -652,6 +686,8 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
   Addr obj_loc = 0;
   Word bytes_read = 0;
 
+  SE_(register_value) * reg_val;
+
   SE_(tainted_loc) invalid_addr;
   SE_(tainted_loc) tainted_loc;
   VG_(memcpy)
@@ -688,10 +724,26 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
         return False;
       }
 
-      RegWord register_value =
-          *(RegWord *)(server->current_io_vec->initial_register_state_map.buf +
-                       tainted_loc.location.offset);
-      if (register_value == OBJ_ALLOCATED_MAGIC) {
+      reg_val = NULL;
+      for (UInt j = 0;
+           j <
+           VG_(sizeXA)(server->current_io_vec->initial_state.register_state);
+           i++) {
+        SE_(register_value) *tmp = VG_(indexXA)(
+            server->current_io_vec->initial_state.register_state, j);
+        if (tmp->guest_state_offset == tainted_loc.location.offset) {
+          reg_val = tmp;
+          break;
+        }
+      }
+      if (!reg_val) {
+        VG_(umsg)
+        ("Could not find register %d in IOVec register state\n",
+         tainted_loc.location.offset);
+        return False;
+      }
+
+      if (reg_val->is_ptr) {
         /* This register has been allocated, so extend the existing object */
         if (invalid_addr.type != taint_addr) {
           VG_(umsg)("Invalid tainted address\n");
@@ -699,13 +751,8 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
         }
 
         Addr obj_start, obj_end;
-        VG_(memcpy)
-        ((void *)&obj_loc,
-         server->current_io_vec->initial_state.register_state.buf +
-             tainted_loc.location.offset,
-         sizeof(obj_loc));
 
-        if (!lookup_obj(server, obj_loc, &obj_start, &obj_end)) {
+        if (!lookup_obj(server, (Addr)reg_val->value, &obj_start, &obj_end)) {
           VG_(umsg)
           ("Failed to find expected object allocated to register %d\n",
            tainted_loc.location.offset);
@@ -734,10 +781,7 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
         set_pointer_submember(server, obj_start, obj_end, ptr_member_offset,
                               submember);
 
-        VG_(memcpy)
-        (server->current_io_vec->initial_state.register_state.buf +
-             tainted_loc.location.offset,
-         &obj_start, sizeof(obj_start));
+        reg_val->value = (RegWord)obj_start;
         break;
       } else {
         /* This register hasn't been allocated before */
@@ -750,14 +794,8 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
         //        VG_(printf)
         //        ("Setting register %d to %p\n", tainted_loc.location.offset,
         //         (void *)(obj_loc));
-        VG_(memcpy)
-        (server->current_io_vec->initial_state.register_state.buf +
-             tainted_loc.location.offset,
-         &obj_loc, sizeof(obj_loc));
-
-        *(RegWord *)(&server->current_io_vec->initial_register_state_map
-                          .buf[tainted_loc.location.offset]) =
-            OBJ_ALLOCATED_MAGIC;
+        reg_val->is_ptr = True;
+        reg_val->value = obj_loc;
       }
       break;
     case taint_stack:
@@ -907,22 +945,15 @@ static Bool wait_for_child(SE_(cmd_server) * server) {
           goto cleanup;
         }
 
+        VexGuestArchState guest_state;
         VG_(memcpy)
-        (server->current_io_vec->initial_state.register_state.buf,
-         cmd_msg->data, cmd_msg->length);
+        (&guest_state, cmd_msg->data, cmd_msg->length);
         SE_(free_msg)(cmd_msg);
-        VG_(umsg)
-        ("Getting stack pointer from %p\n",
-         &server->current_io_vec->initial_state.register_state
-              .buf[VG_O_STACK_PTR]);
         VG_(memcpy)
-        (&server->initial_stack_ptr,
-         &server->current_io_vec->initial_state.register_state
-              .buf[VG_O_STACK_PTR],
+        (&server->initial_stack_ptr, ((UChar *)&guest_state + VG_O_STACK_PTR),
          sizeof(server->initial_stack_ptr));
         server->initial_frame_ptr = server->initial_stack_ptr;
         server->min_stack_ptr = server->initial_stack_ptr;
-        VG_(umsg)("Reporting success\n");
         report_success(server, 0, NULL);
       } else {
         if (cmd_msg->msg_type == SEMSG_OK && server->needs_coverage) {

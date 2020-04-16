@@ -9,6 +9,7 @@
 #include "pub_tool_guest.h"
 #include "pub_tool_oset.h"
 #include "pub_tool_rangemap.h"
+#include "pub_tool_xarray.h"
 #include "se.h"
 #include "se_command.h"
 #include "se_taint.h"
@@ -21,8 +22,9 @@ const HChar *SE_IOVEC_MALLOC_TYPE;
 #define OBJ_ALLOCATED_MAGIC 0b00001000
 
 typedef struct se_program_state_ {
-  SE_(memoized_object) register_state; /* Register values */
-  RangeMap *address_state; /* Which addresses are allocated as objects */
+  XArray *register_state;      /* Register values */
+  RangeMap *address_state;     /* Object layout */
+  RangeMap *pointer_locations; /* Location and value of pointers */
 } SE_(program_state);
 
 typedef struct se_return_value_ {
@@ -30,18 +32,25 @@ typedef struct se_return_value_ {
   Bool is_ptr;
 } SE_(return_value);
 
+typedef struct se_register_value_ {
+  Int guest_state_offset;
+  RegWord value;
+  Bool is_ptr;
+} SE_(register_value);
+
 typedef struct io_vec {
   VexArch host_arch;       /* Architecture that generated this IOVec */
   VexEndness host_endness; /* Endianess of generation machine */
   UInt random_seed;        /* Random seed used to fuzz this IOVec */
 
-  SE_(program_state) initial_state;  /* Initial program state */
-  SE_(program_state) expected_state; /* State expected post-execution */
+  SE_(program_state) initial_state; /* Initial program state */
+  RangeMap *expected_state;         /* State expected post-execution */
 
-  SE_(return_value) return_value;
+  SE_(return_value) return_value; /* The expected return value */
 
   /* Maps which parts of the register states are pointers */
-  SE_(memoized_object) initial_register_state_map;
+  //  SE_(memoized_object) initial_register_state_map;
+  /* The location and value of pointers in the address space */
 
   OSet *system_calls; /* Unique set of system calls executed */
 } SE_(io_vec);

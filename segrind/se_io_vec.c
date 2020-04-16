@@ -4,6 +4,7 @@
 
 #include "se_io_vec.h"
 #include "se_command.h"
+#include "se_defs.h"
 #include "se_utils.h"
 
 #include "pub_tool_aspacemgr.h"
@@ -27,23 +28,28 @@ SE_(io_vec) * SE_(create_io_vec)(void) {
 
   io_vec->initial_state.address_state =
       VG_(newRangeMap)(VG_(malloc), SE_IOVEC_MALLOC_TYPE, VG_(free), 0);
-  io_vec->expected_state.address_state =
+  io_vec->initial_state.pointer_locations =
+      VG_(newRangeMap)(VG_(malloc), SE_IOVEC_MALLOC_TYPE, VG_(free), 0);
+  io_vec->initial_state.register_state =
+      VG_(newXA)(VG_(malloc), SE_IOVEC_MALLOC_TYPE, VG_(free),
+                 sizeof(SE_(register_value)));
+
+  io_vec->expected_state =
       VG_(newRangeMap)(VG_(malloc), SE_IOVEC_MALLOC_TYPE, VG_(free), 0);
 
-  io_vec->initial_state.register_state.len = sizeof(VexGuestArchState);
-  io_vec->initial_state.register_state.type = se_memo_arch_state;
-  io_vec->initial_state.register_state.buf =
-      VG_(malloc)(SE_IOVEC_MALLOC_TYPE, sizeof(VexGuestArchState));
+  //  io_vec->expected_state.register_state.len =
+  //      sizeof(SE_(register_value)) * SE_NUM_GPRS;
+  //  io_vec->expected_state.register_state.type = se_memo_arch_state;
+  //  io_vec->expected_state.register_state.buf =
+  //      VG_(malloc)(SE_IOVEC_MALLOC_TYPE,
+  //      io_vec->expected_state.register_state.len);
 
-  io_vec->expected_state.register_state.len = sizeof(VexGuestArchState);
-  io_vec->expected_state.register_state.type = se_memo_arch_state;
-  io_vec->expected_state.register_state.buf =
-      VG_(malloc)(SE_IOVEC_MALLOC_TYPE, sizeof(VexGuestArchState));
-
-  io_vec->initial_register_state_map.len = sizeof(VexGuestArchState);
-  io_vec->initial_register_state_map.type = se_memo_arch_state;
-  io_vec->initial_register_state_map.buf =
-      VG_(malloc)(SE_IOVEC_MALLOC_TYPE, sizeof(VexGuestArchState));
+  //  io_vec->initial_register_state_map.len =
+  //      sizeof(SE_(register_value)) * SE_NUM_GPRS;
+  //  io_vec->initial_register_state_map.type = se_memo_arch_state;
+  //  io_vec->initial_register_state_map.buf =
+  //      VG_(malloc)(SE_IOVEC_MALLOC_TYPE,
+  //      io_vec->initial_register_state_map.len);
 
   io_vec->return_value.value.type = se_memo_return_value;
   io_vec->return_value.value.len = sizeof(RegWord);
@@ -62,20 +68,27 @@ void SE_(free_io_vec)(SE_(io_vec) * io_vec) {
   if (io_vec->initial_state.address_state)
     VG_(deleteRangeMap)(io_vec->initial_state.address_state);
 
-  if (io_vec->expected_state.address_state)
-    VG_(deleteRangeMap)(io_vec->expected_state.address_state);
+  if (io_vec->expected_state)
+    VG_(deleteRangeMap)(io_vec->expected_state);
 
-  if (io_vec->initial_state.register_state.buf)
-    VG_(free)(io_vec->initial_state.register_state.buf);
+  if (io_vec->initial_state.register_state)
+    VG_(deleteXA)(io_vec->initial_state.register_state);
 
-  if (io_vec->expected_state.register_state.buf)
-    VG_(free)(io_vec->expected_state.register_state.buf);
+  if (io_vec->expected_state) {
+    VG_(deleteRangeMap)(io_vec->expected_state);
+  }
 
-  if (io_vec->initial_register_state_map.buf)
-    VG_(free)(io_vec->initial_register_state_map.buf);
+  //  if (io_vec->expected_state.register_state.buf)
+  //    VG_(free)(io_vec->expected_state.register_state.buf);
+
+  //  if (io_vec->initial_register_state_map.buf)
+  //    VG_(free)(io_vec->initial_register_state_map.buf);
 
   if (io_vec->return_value.value.buf)
     VG_(free)(io_vec->return_value.value.buf);
+
+  if (io_vec->initial_state.pointer_locations)
+    VG_(deleteRangeMap)(io_vec->initial_state.pointer_locations);
 
   VG_(free)(io_vec);
 }
@@ -103,19 +116,21 @@ SizeT SE_(io_vec_size)(SE_(io_vec) * io_vec) {
          + sizeof(VexEndness)          /* Endness */
          + sizeof(io_vec->random_seed) /* Random seed */
          /* Initial state */
-         + sizeof(SizeT) + io_vec->initial_state.register_state.len +
+         + sizeof(SizeT) +
+         sizeof(SE_(register_value)) *
+             VG_(sizeXA)(io_vec->initial_state.register_state) +
          sizeof(UInt) + /* Size of address map */
          VG_(sizeRangeMap)(io_vec->initial_state.address_state) * 3 *
-             sizeof(UWord)
+             sizeof(UWord) +
+         /* Pointer locations */
+         sizeof(UInt) +
+         VG_(sizeRangeMap)(io_vec->initial_state.pointer_locations) * 3 *
+             sizeof(UWord) +
          /* Expected State */
-         + sizeof(SizeT) + io_vec->expected_state.register_state.len +
          sizeof(UInt) /* Size of address map */
-         + VG_(sizeRangeMap)(io_vec->expected_state.address_state) * 3 *
-               sizeof(UWord) +
+         + VG_(sizeRangeMap)(io_vec->expected_state) * 3 * sizeof(UWord) +
          /* Return value */
          sizeof(SizeT) + io_vec->return_value.value.len + sizeof(Bool) +
-         /* Register state map */
-         sizeof(SizeT) + io_vec->initial_register_state_map.len +
          /* System calls */
          sizeof(Word) /* System call count */
          + VG_(OSetWord_Size)(io_vec->system_calls) * sizeof(UWord);
@@ -125,11 +140,14 @@ SE_(io_vec) * SE_(read_io_vec_from_buf)(SizeT len, UChar *src) {
   tl_assert(len > 0);
   tl_assert(src);
 
+  SizeT register_state_size;
+  UInt rangemap_size;
+  SizeT bytes_read = 0;
+
   SE_(io_vec) *io_vec =
       (SE_(io_vec) *)VG_(malloc)(SE_IOVEC_MALLOC_TYPE, sizeof(SE_(io_vec)));
   VG_(memset)(io_vec, 0, sizeof(SE_(io_vec)));
 
-  SizeT bytes_read = 0;
   VG_(memcpy)(&io_vec->host_arch, src + bytes_read, sizeof(io_vec->host_arch));
   bytes_read += sizeof(io_vec->host_arch);
 
@@ -141,19 +159,18 @@ SE_(io_vec) * SE_(read_io_vec_from_buf)(SizeT len, UChar *src) {
   (&io_vec->random_seed, src + bytes_read, sizeof(io_vec->random_seed));
   bytes_read += sizeof(io_vec->random_seed);
 
-  io_vec->initial_state.register_state.type = se_memo_arch_state;
+  io_vec->initial_state.register_state =
+      VG_(newXA)(VG_(malloc), SE_IOVEC_MALLOC_TYPE, VG_(free),
+                 sizeof(SE_(register_value)));
   VG_(memcpy)
-  (&io_vec->initial_state.register_state.len, src + bytes_read,
-   sizeof(io_vec->initial_state.register_state.len));
-  bytes_read += sizeof(io_vec->initial_state.register_state.len);
-
-  io_vec->initial_state.register_state.buf = VG_(malloc)(
-      SE_IOVEC_MALLOC_TYPE, io_vec->initial_state.register_state.len);
-  VG_(memcpy)
-  (io_vec->initial_state.register_state.buf, src + bytes_read,
-   io_vec->initial_state.register_state.len);
-  bytes_read += io_vec->initial_state.register_state.len;
-  UInt rangemap_size;
+  (&register_state_size, src + bytes_read, sizeof(register_state_size));
+  bytes_read += sizeof(register_state_size);
+  for (; register_state_size > 0; register_state_size--) {
+    SE_(register_value) reg_val;
+    VG_(memcpy)(&reg_val, src + bytes_read, sizeof(reg_val));
+    bytes_read += sizeof(reg_val);
+    VG_(addToXA)(io_vec->initial_state.register_state, &reg_val);
+  }
   io_vec->initial_state.address_state =
       VG_(newRangeMap)(VG_(malloc), SE_IOVEC_MALLOC_TYPE, VG_(free), 0);
   VG_(memcpy)(&rangemap_size, src + bytes_read, sizeof(rangemap_size));
@@ -169,19 +186,7 @@ SE_(io_vec) * SE_(read_io_vec_from_buf)(SizeT len, UChar *src) {
     VG_(bindRangeMap)
     (io_vec->initial_state.address_state, key_min, key_max, val);
   }
-
-  io_vec->expected_state.register_state.type = se_memo_arch_state;
-  VG_(memcpy)
-  (&io_vec->expected_state.register_state.len, src + bytes_read,
-   sizeof(io_vec->expected_state.register_state.len));
-  bytes_read += sizeof(io_vec->expected_state.register_state.len);
-  io_vec->expected_state.register_state.buf = VG_(malloc)(
-      SE_IOVEC_MALLOC_TYPE, io_vec->expected_state.register_state.len);
-  VG_(memcpy)
-  (io_vec->expected_state.register_state.buf, src + bytes_read,
-   io_vec->expected_state.register_state.len);
-  bytes_read += io_vec->expected_state.register_state.len;
-  io_vec->expected_state.address_state =
+  io_vec->initial_state.pointer_locations =
       VG_(newRangeMap)(VG_(malloc), SE_IOVEC_MALLOC_TYPE, VG_(free), 0);
   VG_(memcpy)(&rangemap_size, src + bytes_read, sizeof(rangemap_size));
   bytes_read += sizeof(rangemap_size);
@@ -194,7 +199,34 @@ SE_(io_vec) * SE_(read_io_vec_from_buf)(SizeT len, UChar *src) {
     VG_(memcpy)(&val, src + bytes_read, sizeof(val));
     bytes_read += sizeof(val);
     VG_(bindRangeMap)
-    (io_vec->expected_state.address_state, key_min, key_max, val);
+    (io_vec->initial_state.pointer_locations, key_min, key_max, val);
+  }
+
+  //  io_vec->expected_state.register_state.type = se_memo_arch_state;
+  //  VG_(memcpy)
+  //  (&io_vec->expected_state.register_state.len, src + bytes_read,
+  //   sizeof(io_vec->expected_state.register_state.len));
+  //  bytes_read += sizeof(io_vec->expected_state.register_state.len);
+  //  io_vec->expected_state.register_state.buf = VG_(malloc)(
+  //      SE_IOVEC_MALLOC_TYPE, io_vec->expected_state.register_state.len);
+  //  VG_(memcpy)
+  //  (io_vec->expected_state.register_state.buf, src + bytes_read,
+  //   io_vec->expected_state.register_state.len);
+  //  bytes_read += io_vec->expected_state.register_state.len;
+  io_vec->expected_state =
+      VG_(newRangeMap)(VG_(malloc), SE_IOVEC_MALLOC_TYPE, VG_(free), 0);
+  VG_(memcpy)(&rangemap_size, src + bytes_read, sizeof(rangemap_size));
+  bytes_read += sizeof(rangemap_size);
+  for (; rangemap_size > 0; rangemap_size--) {
+    UWord key_min, key_max, val;
+    VG_(memcpy)(&key_min, src + bytes_read, sizeof(key_min));
+    bytes_read += sizeof(key_min);
+    VG_(memcpy)(&key_max, src + bytes_read, sizeof(key_max));
+    bytes_read += sizeof(key_max);
+    VG_(memcpy)(&val, src + bytes_read, sizeof(val));
+    bytes_read += sizeof(val);
+    VG_(bindRangeMap)
+    (io_vec->expected_state, key_min, key_max, val);
   }
 
   io_vec->return_value.value.type = se_memo_return_value;
@@ -213,17 +245,18 @@ SE_(io_vec) * SE_(read_io_vec_from_buf)(SizeT len, UChar *src) {
    sizeof(io_vec->return_value.is_ptr));
   bytes_read += sizeof(io_vec->return_value.is_ptr);
 
-  io_vec->initial_register_state_map.type = se_memo_arch_state;
-  VG_(memcpy)
-  (&io_vec->initial_register_state_map.len, src + bytes_read,
-   sizeof(io_vec->initial_register_state_map.len));
-  bytes_read += sizeof(io_vec->initial_register_state_map.len);
-  io_vec->initial_register_state_map.buf =
-      VG_(malloc)(SE_IOVEC_MALLOC_TYPE, io_vec->initial_register_state_map.len);
-  VG_(memcpy)
-  (io_vec->initial_register_state_map.buf, src + bytes_read,
-   io_vec->initial_register_state_map.len);
-  bytes_read += io_vec->initial_register_state_map.len;
+  //  io_vec->initial_register_state_map.type = se_memo_arch_state;
+  //  VG_(memcpy)
+  //  (&io_vec->initial_register_state_map.len, src + bytes_read,
+  //   sizeof(io_vec->initial_register_state_map.len));
+  //  bytes_read += sizeof(io_vec->initial_register_state_map.len);
+  //  io_vec->initial_register_state_map.buf =
+  //      VG_(malloc)(SE_IOVEC_MALLOC_TYPE,
+  //      io_vec->initial_register_state_map.len);
+  //  VG_(memcpy)
+  //  (io_vec->initial_register_state_map.buf, src + bytes_read,
+  //   io_vec->initial_register_state_map.len);
+  //  bytes_read += io_vec->initial_register_state_map.len;
 
   io_vec->system_calls =
       VG_(OSetWord_Create)(VG_(malloc), SE_IOVEC_MALLOC_TYPE, VG_(free));
@@ -245,10 +278,11 @@ void SE_(write_io_vec_to_buf)(SE_(io_vec) * io_vec,
   tl_assert(io_vec);
 
   SizeT io_vec_size = SE_(io_vec_size)(io_vec);
+  SizeT bytes_written = 0;
+  SizeT register_state_size;
   UChar *data = (UChar *)VG_(malloc)(SE_IOVEC_MALLOC_TYPE, io_vec_size);
 
   /* host_arch */
-  SizeT bytes_written = 0;
   VG_(memcpy)(data, &io_vec->host_arch, sizeof(io_vec->host_arch));
   bytes_written += sizeof(io_vec->host_arch);
 
@@ -264,14 +298,16 @@ void SE_(write_io_vec_to_buf)(SE_(io_vec) * io_vec,
 
   /* initial_state */
   /* register_state */
+  register_state_size = VG_(sizeXA)(io_vec->initial_state.register_state);
   VG_(memcpy)
-  (data + bytes_written, &io_vec->initial_state.register_state.len,
-   sizeof(io_vec->initial_state.register_state.len));
-  bytes_written += sizeof(io_vec->initial_state.register_state.len);
-  VG_(memcpy)
-  (data + bytes_written, io_vec->initial_state.register_state.buf,
-   io_vec->initial_state.register_state.len);
-  bytes_written += io_vec->initial_state.register_state.len;
+  (data + bytes_written, &register_state_size, sizeof(register_state_size));
+  bytes_written += sizeof(register_state_size);
+  for (SizeT i = 0; i < register_state_size; i++) {
+    SE_(register_value) *reg_val =
+        VG_(indexXA)(io_vec->initial_state.register_state, i);
+    VG_(memcpy)(data + bytes_written, reg_val, sizeof(SE_(register_value)));
+    bytes_written += sizeof(SE_(register_value));
+  }
   /* address_space */
   UInt space_size = VG_(sizeRangeMap)(io_vec->initial_state.address_state);
   VG_(memcpy)(data + bytes_written, &space_size, sizeof(space_size));
@@ -287,25 +323,39 @@ void SE_(write_io_vec_to_buf)(SE_(io_vec) * io_vec,
     VG_(memcpy)(data + bytes_written, &val, sizeof(val));
     bytes_written += sizeof(val);
   }
-
-  /* expected_state */
-  /* register_state */
-  VG_(memcpy)
-  (data + bytes_written, &io_vec->expected_state.register_state.len,
-   sizeof(io_vec->expected_state.register_state.len));
-  bytes_written += sizeof(io_vec->expected_state.register_state.len);
-  VG_(memcpy)
-  (data + bytes_written, io_vec->expected_state.register_state.buf,
-   io_vec->expected_state.register_state.len);
-  bytes_written += io_vec->expected_state.register_state.len;
-  /* address_space */
-  space_size = VG_(sizeRangeMap)(io_vec->expected_state.address_state);
+  /* pointer_locations */
+  space_size = VG_(sizeRangeMap)(io_vec->initial_state.pointer_locations);
   VG_(memcpy)(data + bytes_written, &space_size, sizeof(space_size));
   bytes_written += sizeof(space_size);
   for (UInt i = 0; i < space_size; i++) {
     UWord key_min, key_max, val;
     VG_(indexRangeMap)
-    (&key_min, &key_max, &val, io_vec->expected_state.address_state, i);
+    (&key_min, &key_max, &val, io_vec->initial_state.pointer_locations, i);
+    VG_(memcpy)(data + bytes_written, &key_min, sizeof(key_min));
+    bytes_written += sizeof(key_min);
+    VG_(memcpy)(data + bytes_written, &key_max, sizeof(key_max));
+    bytes_written += sizeof(key_max);
+    VG_(memcpy)(data + bytes_written, &val, sizeof(val));
+    bytes_written += sizeof(val);
+  }
+
+  /* expected_state */
+  /* register_state */
+  //  VG_(memcpy)
+  //  (data + bytes_written, &io_vec->expected_state.register_state.len,
+  //   sizeof(io_vec->expected_state.register_state.len));
+  //  bytes_written += sizeof(io_vec->expected_state.register_state.len);
+  //  VG_(memcpy)
+  //  (data + bytes_written, io_vec->expected_state.register_state.buf,
+  //   io_vec->expected_state.register_state.len);
+  //  bytes_written += io_vec->expected_state.register_state.len;
+  space_size = VG_(sizeRangeMap)(io_vec->expected_state);
+  VG_(memcpy)(data + bytes_written, &space_size, sizeof(space_size));
+  bytes_written += sizeof(space_size);
+  for (UInt i = 0; i < space_size; i++) {
+    UWord key_min, key_max, val;
+    VG_(indexRangeMap)
+    (&key_min, &key_max, &val, io_vec->expected_state, i);
     VG_(memcpy)(data + bytes_written, &key_min, sizeof(key_min));
     bytes_written += sizeof(key_min);
     VG_(memcpy)(data + bytes_written, &key_max, sizeof(key_max));
@@ -329,14 +379,14 @@ void SE_(write_io_vec_to_buf)(SE_(io_vec) * io_vec,
   bytes_written += sizeof(io_vec->return_value.is_ptr);
 
   /* initial_register_state_map */
-  VG_(memcpy)
-  (data + bytes_written, &io_vec->initial_register_state_map.len,
-   sizeof(io_vec->initial_register_state_map.len));
-  bytes_written += sizeof(io_vec->initial_register_state_map.len);
-  VG_(memcpy)
-  (data + bytes_written, io_vec->initial_register_state_map.buf,
-   io_vec->initial_register_state_map.len);
-  bytes_written += io_vec->initial_register_state_map.len;
+  //  VG_(memcpy)
+  //  (data + bytes_written, &io_vec->initial_register_state_map.len,
+  //   sizeof(io_vec->initial_register_state_map.len));
+  //  bytes_written += sizeof(io_vec->initial_register_state_map.len);
+  //  VG_(memcpy)
+  //  (data + bytes_written, io_vec->initial_register_state_map.buf,
+  //   io_vec->initial_register_state_map.len);
+  //  bytes_written += io_vec->initial_register_state_map.len;
 
   /* system_calls */
   Word count = VG_(OSetWord_Size)(io_vec->system_calls);
@@ -372,25 +422,34 @@ void SE_(ppIOVec)(SE_(io_vec) * io_vec) {
     VG_(printf)("Return value is NULL\n");
   }
 
-  VG_(printf)("System Calls: ");
+  VG_(printf)("system_calls: ");
   UWord syscall;
   VG_(OSetWord_ResetIter)(io_vec->system_calls);
   while (VG_(OSetWord_Next)(io_vec->system_calls, &syscall)) {
     VG_(printf)("%lu ", syscall);
   }
-  VG_(printf)("\nRegister Pointers: ");
-  for (SizeT i = 0; i < io_vec->initial_register_state_map.len;
-       i += sizeof(RegWord)) {
-    RegWord reg = *(RegWord *)(io_vec->initial_register_state_map.buf + i);
-    if (reg == OBJ_ALLOCATED_MAGIC) {
-      VG_(printf)("%lu ", i);
-    }
-  }
+  //  VG_(printf)("\nregister_pointers: ");
+  //  for (SizeT i = 0; i < io_vec->initial_register_state_map.len;
+  //       i += sizeof(RegWord)) {
+  //    RegWord reg = *(RegWord *)(io_vec->initial_register_state_map.buf + i);
+  //    if (reg == OBJ_ALLOCATED_MAGIC) {
+  //      VG_(printf)("%lu ", i);
+  //    }
+  //  }
 
   VG_(printf)("\nInitial State:\n");
   SE_(ppProgramState)(&io_vec->initial_state);
   VG_(printf)("Expected State:\n");
-  SE_(ppProgramState)(&io_vec->expected_state);
+  UInt size = VG_(sizeRangeMap)(io_vec->expected_state);
+  for (UInt i = 0; i < size; i++) {
+    UWord addr_min, addr_max, val;
+    VG_(indexRangeMap)
+    (&addr_min, &addr_max, &val, io_vec->expected_state, i);
+    if (val > 0) {
+      VG_(printf)
+      ("\t[ %p -- %p ] = %lu\n", (void *)addr_min, (void *)addr_max, val);
+    }
+  }
   VG_(printf)
   ("==========================================================================="
    "====================\n");
@@ -408,7 +467,25 @@ void SE_(ppProgramState)(SE_(program_state) * program_state) {
     VG_(printf)("\t0x%016lx -- 0x%016lx = %lu\n", key_min, key_max, val);
   }
 
-  SE_(ppMemoizedObject)(&program_state->register_state);
+  VG_(printf)("pointer_locations:\n");
+  UInt size = VG_(sizeRangeMap)(program_state->pointer_locations);
+  for (UInt i = 0; i < size; i++) {
+    UWord addr_min, addr_max, val;
+    VG_(indexRangeMap)
+    (&addr_min, &addr_max, &val, program_state->pointer_locations, i);
+    if (val > 0) {
+      VG_(printf)("\t%p = %p\n", (void *)addr_min, (void *)val);
+    }
+  }
+
+  VG_(printf)("register_state:\n");
+  for (UInt i = 0; i < VG_(sizeXA)(program_state->register_state); i++) {
+    SE_(register_value) *reg_val =
+        VG_(indexXA)(program_state->register_state, i);
+    VG_(printf)
+    ("\t%d = 0x%lx %s\n", reg_val->guest_state_offset, reg_val->value,
+     reg_val->is_ptr ? "O" : "X");
+  }
 }
 
 Bool SE_(current_state_matches_expected)(SE_(io_vec) * io_vec,
@@ -457,7 +534,7 @@ Bool SE_(current_state_matches_expected)(SE_(io_vec) * io_vec,
            current_addr++) {
         VG_(lookupRangeMap)
         (&expected_min_addr, &expected_max_addr, &expected_val,
-         io_vec->expected_state.address_state, current_addr);
+         io_vec->expected_state, current_addr);
         if (VG_(memcmp)((void *)current_addr, &expected_val, 1) != 0) {
           return False;
         }

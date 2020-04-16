@@ -128,7 +128,7 @@ static SizeT SE_(write_io_vec_to_cmd_server)(SE_(io_vec) * io_vec,
   tl_assert(SE_(command_server));
   tl_assert(io_vec);
 
-  SE_(ppIOVec)(io_vec);
+  //  SE_(ppIOVec)(io_vec);
 
   SizeT bytes_written = SE_(write_io_vec_to_fd)(
       SE_(command_server)->executor_pipe[1], SEMSG_OK, io_vec);
@@ -179,7 +179,7 @@ static SizeT SE_(write_coverage_to_cmd_server)(void) {
  * @param program_state
  */
 static void extract_return(VexArch arch, SE_(return_value) * return_value,
-                           SE_(program_state) * program_state) {
+                           VexGuestArchState *program_state) {
   tl_assert(return_value);
   tl_assert(program_state);
 
@@ -188,7 +188,7 @@ static void extract_return(VexArch arch, SE_(return_value) * return_value,
   case VexArchAMD64:
   case VexArchARM64:
     *(RegWord *)return_value->value.buf =
-        *(RegWord *)(program_state->register_state.buf + SE_offB_RET);
+        *(RegWord *)((UChar *)program_state + SE_offB_RET);
     return_value->value.len = sizeof(RegWord);
     break;
   default:
@@ -216,7 +216,7 @@ static void copy_pointer_data(SE_(io_vec) * io_vec) {
       for (UWord curr = addr_min; curr <= addr_max; curr++) {
         UChar byte = *(UChar *)curr;
         VG_(bindRangeMap)
-        (io_vec->expected_state.address_state, curr, curr, (UWord)byte);
+        (io_vec->expected_state, curr, curr, (UWord)byte);
       }
     }
   }
@@ -233,14 +233,13 @@ static void SE_(send_fuzzed_io_vec)(void) {
     VG_(OSetWord_Insert)
     (SE_(command_server)->current_io_vec->system_calls, syscall_num);
   }
+  VexGuestArchState program_state;
   VG_(get_shadow_regs_area)
-  (target_id,
-   SE_(command_server)->current_io_vec->expected_state.register_state.buf, 0, 0,
-   SE_(command_server)->current_io_vec->expected_state.register_state.len);
+  (target_id, &program_state, 0, 0, sizeof(program_state));
 
   extract_return(SE_(command_server)->current_io_vec->host_arch,
                  &SE_(command_server)->current_io_vec->return_value,
-                 &SE_(command_server)->current_io_vec->expected_state);
+                 &program_state);
 
   copy_pointer_data(SE_(command_server)->current_io_vec);
 
@@ -619,14 +618,10 @@ static void SE_(maybe_report_success_to_commader)(void) {
       VexArch host_arch;
       VexArchInfo host_arch_info;
       SE_(return_value) return_value;
-      SE_(program_state) end_state;
 
       VG_(machine_get_VexArchInfo)(&host_arch, &host_arch_info);
 
-      end_state.register_state.buf = (UChar *)last_state;
-      end_state.register_state.len = sizeof(last_state);
-      end_state.register_state.type = se_memo_arch_state;
-      extract_return(host_arch, &return_value, &end_state);
+      extract_return(host_arch, &return_value, last_state);
 
       if (!SE_(current_state_matches_expected)(
               SE_(command_server)->current_io_vec, &return_value)) {
@@ -683,13 +678,12 @@ static void record_current_state(Addr addr) {
     VG_(get_shadow_regs_area)
     (target_id, (UChar *)&current_state, 0, 0, sizeof(current_state));
 
-    //        const HChar *fnname;
-    //        VG_(get_fnname)
-    //        (VG_(current_DiEpoch)(), current_state.VG_INSTR_PTR, &fnname);
-    //        VG_(umsg)
-    //        ("Recording state for %p/%p (%s)\n", (void
-    //        *)current_state.VG_INSTR_PTR,
-    //         (void *)addr, fnname);
+    const HChar *fnname;
+    VG_(get_fnname)
+    (VG_(current_DiEpoch)(), current_state.VG_INSTR_PTR, &fnname);
+    VG_(umsg)
+    ("Recording state for %p/%p (%s)\n", (void *)current_state.VG_INSTR_PTR,
+     (void *)addr, fnname);
 
     current_state.VG_INSTR_PTR = addr;
 
@@ -724,10 +718,17 @@ static void jump_to_target_function(void) {
     SE_(cleanup_and_exit)();
   }
 
-  VG_(set_shadow_regs_area)
-  (target_id, 0, 0,
-   SE_(command_server)->current_io_vec->initial_state.register_state.len,
-   SE_(command_server)->current_io_vec->initial_state.register_state.buf);
+  for (UInt i = 0;
+       i <
+       VG_(sizeXA)(
+           SE_(command_server)->current_io_vec->initial_state.register_state);
+       i++) {
+    SE_(register_value) *reg_val = VG_(indexXA)(
+        SE_(command_server)->current_io_vec->initial_state.register_state, i);
+    VG_(set_shadow_regs_area)
+    (target_id, 0, reg_val->guest_state_offset, sizeof(reg_val->value),
+     &reg_val->value);
+  }
   target_called = True;
   record_current_state(SE_(command_server)->target_func_addr);
 }
@@ -927,9 +928,9 @@ static IRSB *SE_(instrument_target)(IRSB *bb, IRType gWordType) {
     VG_(bindRangeMap)(irsb_ranges, minAddress, maxAddress, minAddress);
   }
 
-  //  if (VG_(strcmp)(fnname, target_name) == 0) {
-  //    ppIRSB(bbOut);
-  //  }
+  if (VG_(strcmp)(fnname, target_name) == 0) {
+    ppIRSB(bbOut);
+  }
   return bbOut;
 }
 

@@ -62,6 +62,7 @@ typedef enum _memorized_obj_type {
   se_memo_oset_word,    /* An OSetWord object */
   se_memo_arch_state,   /* Mapping of objects and their bounds */
   se_memo_return_value, /* A return value */
+  se_memo_pointers      /* A list of pointer locations */
 } SE_(memoized_type);
 
 typedef struct memoized_object {
