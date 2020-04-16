@@ -187,6 +187,7 @@ static void extract_return(VexArch arch, SE_(return_value) * return_value,
   case VexArchX86:
   case VexArchAMD64:
   case VexArchARM64:
+    tl_assert(return_value->value.buf);
     *(RegWord *)return_value->value.buf =
         *(RegWord *)((UChar *)program_state + SE_offB_RET);
     return_value->value.len = sizeof(RegWord);
@@ -210,7 +211,8 @@ static void copy_pointer_data(SE_(io_vec) * io_vec) {
   for (UInt i = 0; i < size; i++) {
     VG_(indexRangeMap)
     (&addr_min, &addr_max, &val, io_vec->initial_state.address_state, i);
-    VG_(printf)("%p -- %p = %lu\n", (void *)addr_min, (void *)addr_max, val);
+    //    VG_(printf)("%p -- %p = %lu\n", (void *)addr_min, (void *)addr_max,
+    //    val);
     if (val != 0 && (val & OBJ_ALLOCATED_MAGIC) &&
         !(val & ALLOCATED_SUBPTR_MAGIC)) {
       for (UWord curr = addr_min; curr <= addr_max; curr++) {
@@ -613,16 +615,21 @@ static void SE_(maybe_report_success_to_commader)(void) {
     if (SE_(command_server)->using_fuzzed_io_vec) {
       SE_(send_fuzzed_io_vec)();
     } else if (SE_(command_server)->using_existing_io_vec) {
-      VexGuestArchState *last_state =
-          VG_(indexXA)(program_states, VG_(sizeXA)(program_states) - 1);
+      VexGuestArchState last_state;
+      VG_(get_shadow_regs_area)
+      (target_id, (UChar *)&last_state, 0, 0, sizeof(last_state));
+
       VexArch host_arch;
       VexArchInfo host_arch_info;
       SE_(return_value) return_value;
+      RegWord val;
+      return_value.value.buf = (UChar *)&val;
 
       VG_(machine_get_VexArchInfo)(&host_arch, &host_arch_info);
 
-      extract_return(host_arch, &return_value, last_state);
+      extract_return(host_arch, &return_value, &last_state);
 
+      VG_(umsg)("Checking for state equality\n");
       if (!SE_(current_state_matches_expected)(
               SE_(command_server)->current_io_vec, &return_value)) {
         SE_(report_failure_to_commander)();
@@ -678,13 +685,14 @@ static void record_current_state(Addr addr) {
     VG_(get_shadow_regs_area)
     (target_id, (UChar *)&current_state, 0, 0, sizeof(current_state));
 
-    //    const HChar *fnname;
-    //    VG_(get_fnname)
-    //    (VG_(current_DiEpoch)(), current_state.VG_INSTR_PTR, &fnname);
-    //    VG_(umsg)
-    //    ("Recording state for %p/%p (%s)\n", (void
-    //    *)current_state.VG_INSTR_PTR,
-    //     (void *)addr, fnname);
+    //        const HChar *fnname;
+    //        VG_(get_fnname)
+    //        (VG_(current_DiEpoch)(), current_state.VG_INSTR_PTR, &fnname);
+    //        VG_(umsg)
+    //        ("Recording state for %p/%p (%s)\n", (void
+    //        *)current_state.VG_INSTR_PTR,
+    //         (void *)addr, fnname);
+    //        VG_(printf)("RBP = %p\n", (void*)current_state.VG_FRAME_PTR);
 
     current_state.VG_INSTR_PTR = addr;
 
@@ -726,6 +734,9 @@ static void jump_to_target_function(void) {
        i++) {
     SE_(register_value) *reg_val = VG_(indexXA)(
         SE_(command_server)->current_io_vec->initial_state.register_state, i);
+    //    VG_(umsg)
+    //    ("Setting register %d = 0x%lx\n", reg_val->guest_state_offset,
+    //     reg_val->value);
     VG_(set_shadow_regs_area)
     (target_id, 0, reg_val->guest_state_offset, sizeof(reg_val->value),
      (UChar *)&reg_val->value);
@@ -929,9 +940,9 @@ static IRSB *SE_(instrument_target)(IRSB *bb, IRType gWordType) {
     VG_(bindRangeMap)(irsb_ranges, minAddress, maxAddress, minAddress);
   }
 
-  //  if (VG_(strcmp)(fnname, target_name) == 0) {
-  //    ppIRSB(bbOut);
-  //  }
+  //    if (VG_(strcmp)(fnname, target_name) == 0) {
+  //      ppIRSB(bbOut);
+  //    }
   return bbOut;
 }
 
