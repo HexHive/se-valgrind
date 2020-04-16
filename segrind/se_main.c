@@ -245,7 +245,7 @@ static void SE_(send_fuzzed_io_vec)(void) {
 
   copy_pointer_data(SE_(command_server)->current_io_vec);
 
-  //  SE_(ppIOVec)(SE_(command_server)->current_io_vec);
+  //    SE_(ppIOVec)(SE_(command_server)->current_io_vec);
 
   tl_assert(SE_(write_io_vec_to_cmd_server)(SE_(command_server)->current_io_vec,
                                             False) > 0);

@@ -190,26 +190,41 @@ static void fuzz_input_pointers(SE_(io_vec) * io_vec, UInt *seed) {
   tl_assert(seed);
 
   UInt size = VG_(sizeRangeMap)(io_vec->initial_state.address_state);
-  Bool in_obj = False;
-  VG_(umsg)("Fuzzing allocated areas\n");
+  Addr obj_start = 0;
+  VG_(umsg)("Fuzzing allocated areas with seed %u\n", *seed);
   for (Word i = 0; i < size; i++) {
     UWord key_min, key_max, val;
     VG_(indexRangeMap)
     (&key_min, &key_max, &val, io_vec->initial_state.address_state, i);
 
-    //    VG_(umsg)("\t[0x%lx - 0x%lx] = %lu\n", key_min, key_max, val);
+    //        VG_(umsg)("\t[0x%lx - 0x%lx] = %lu %d\n", key_min, key_max, val,
+    //        val & OBJ_END_MAGIC);
 
     if (val & OBJ_START_MAGIC) {
-      in_obj = True;
-    }
-
-    if (in_obj && !(val & ALLOCATED_SUBPTR_MAGIC)) {
-      SE_(fuzz_region)(seed, key_min, key_max);
+      obj_start = (Addr)key_min;
     }
 
     if (val & OBJ_END_MAGIC) {
-      in_obj = False;
+      /* Establish a randomize base for accurate recreation later */
+      UChar *curr = (UChar *)obj_start;
+      for (; curr <= (UChar *)key_max; curr++) {
+        *curr = (UChar)VG_(random)(seed);
+      }
+      SE_(fuzz_region)(seed, obj_start, (Addr)key_max);
       continue;
+    }
+  }
+
+  for (UInt i = 0;
+       i < VG_(sizeRangeMap)(io_vec->initial_state.pointer_member_locations);
+       i++) {
+    UWord addr_min, addr_max, val;
+    VG_(indexRangeMap)
+    (&addr_min, &addr_max, &val, io_vec->initial_state.pointer_member_locations,
+     i);
+    if (val > 0) {
+      tl_assert(sizeof(val) >= (addr_max - addr_min));
+      VG_(memcpy)((void *)addr_min, &val, addr_max - addr_min);
     }
   }
 }
@@ -315,6 +330,7 @@ static Bool handle_set_io_vec(SE_(cmd_server) * server,
 
   //  SE_(ppIOVec)(server->current_io_vec);
   UInt seed = server->current_io_vec->random_seed;
+  VG_(umsg)("Seed = %u\n", seed);
 
   /* Establish valid memory state */
   UInt size =
@@ -346,19 +362,6 @@ static Bool handle_set_io_vec(SE_(cmd_server) * server,
   fuzz_input_pointers(server->current_io_vec, &seed);
   /* No need to fuzz registers, since the ''fuzzed`` registers come in with
    * the initial state */
-  for (UInt i = 0;
-       i < VG_(sizeRangeMap)(
-               server->current_io_vec->initial_state.pointer_locations);
-       i++) {
-    UWord addr_min, addr_max, val;
-    VG_(indexRangeMap)
-    (&addr_min, &addr_max, &val,
-     server->current_io_vec->initial_state.pointer_locations, i);
-    if (val > 0) {
-      tl_assert(sizeof(val) >= (addr_max - addr_min));
-      VG_(memcpy)((void *)addr_min, &val, addr_max - addr_min);
-    }
-  }
 
   //  SE_(ppIOVec)(server->current_io_vec);
 
@@ -604,7 +607,7 @@ static void set_pointer_submember(SE_(cmd_server) * server, Addr obj_start,
      pointer_start + i, val);
   }
   VG_(bindRangeMap)
-  (server->current_io_vec->initial_state.pointer_locations,
+  (server->current_io_vec->initial_state.pointer_member_locations,
    (UWord)pointer_start, (UWord)pointer_start + sizeof(Addr), ptr_val);
 
   VG_(memcpy)((void *)pointer_start, &ptr_val, sizeof(Addr));
@@ -791,7 +794,7 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
           VG_(umsg)("Failed to allocate new object\n");
           return False;
         }
-        VG_(printf)
+        VG_(umsg)
         ("Setting register %d to %p\n", tainted_loc.location.offset,
          (void *)(obj_loc));
         reg_val->is_ptr = True;

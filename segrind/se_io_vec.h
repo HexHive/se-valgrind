@@ -22,9 +22,10 @@ const HChar *SE_IOVEC_MALLOC_TYPE;
 #define OBJ_ALLOCATED_MAGIC 0b00001000
 
 typedef struct se_program_state_ {
-  XArray *register_state;      /* Register values */
-  RangeMap *address_state;     /* Object layout */
-  RangeMap *pointer_locations; /* Location and value of pointers */
+  XArray *register_state;  /* Register values */
+  RangeMap *address_state; /* Object layout */
+  RangeMap
+      *pointer_member_locations; /* Location and value of pointer submembers */
 } SE_(program_state);
 
 typedef struct se_return_value_ {
