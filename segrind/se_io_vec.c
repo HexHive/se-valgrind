@@ -465,33 +465,8 @@ Bool SE_(current_state_matches_expected)(SE_(io_vec) * io_vec,
   //  } else {
   //    VG_(printf)("Return value is NULL\n");
   //  }
-
-  // Check return values
-  if (expected_return->is_ptr != return_value->is_ptr) {
-    //    VG_(umsg)("1\n");
+  if (!SE_(return_values_same)(expected_return, return_value)) {
     return False;
-  }
-
-  if (!expected_return->is_ptr) {
-    Long expected_val = *(Long *)expected_return->value.buf;
-    Long actual_val = *(Long *)return_value->value.buf;
-
-    if (expected_val < 0 && actual_val > 0) {
-      //      VG_(umsg)("2\n");
-      return False;
-    }
-    if (expected_val > 0 && actual_val < 0) {
-      //      VG_(umsg)("3\n");
-      return False;
-    }
-    if (expected_val == 0 && actual_val != 0) {
-      //      VG_(umsg)("4\n");
-      return False;
-    }
-    if (expected_val != 0 && actual_val == 0) {
-      //      VG_(umsg)("5\n");
-      return False;
-    }
   }
 
   /* Check address state */
@@ -538,5 +513,40 @@ Bool SE_(current_state_matches_expected)(SE_(io_vec) * io_vec,
   }
 
   //  VG_(umsg)("8\n");
+  return True;
+}
+
+Bool SE_(return_values_same)(SE_(return_value) * rv_1,
+                             SE_(return_value) * rv_2) {
+  tl_assert(rv_1);
+  tl_assert(rv_2);
+
+  if (rv_1->is_ptr != rv_2->is_ptr) {
+    //    VG_(umsg)("1\n");
+    return False;
+  }
+
+  if (!rv_1->is_ptr) {
+    Long val1 = *(Long *)rv_1->value.buf;
+    Long val2 = *(Long *)rv_2->value.buf;
+
+    if (val1 < 0 && val2 > 0) {
+      //      VG_(umsg)("2\n");
+      return False;
+    }
+    if (val1 > 0 && val2 < 0) {
+      //      VG_(umsg)("3\n");
+      return False;
+    }
+    if (val1 == 0 && val2 != 0) {
+      //      VG_(umsg)("4\n");
+      return False;
+    }
+    if (val1 != 0 && val2 == 0) {
+      //      VG_(umsg)("5\n");
+      return False;
+    }
+  }
+
   return True;
 }

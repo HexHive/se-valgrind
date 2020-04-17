@@ -126,4 +126,13 @@ void SE_(ppProgramState)(SE_(program_state) * program_state);
 Bool SE_(current_state_matches_expected)(SE_(io_vec) * io_vec,
                                          SE_(return_value) * return_value);
 
+/**
+ * @brief Returns True if the two return values match our return value heuristic
+ * @param rv_1
+ * @param rv_2
+ * @return
+ */
+Bool SE_(return_values_same)(SE_(return_value) * rv_1,
+                             SE_(return_value) * rv_2);
+
 #endif // SE_VALGRIND_SE_IO_VEC_H
