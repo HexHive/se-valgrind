@@ -537,8 +537,9 @@ static void fix_address_space() {
 static void SE_(signal_handler)(Int sigNo, Addr addr) {
   if (client_running && target_called) {
     VG_(umsg)
-    ("Signal handler called with signal %s and addr = %p\n",
-     VG_(signame)(sigNo), (void *)addr);
+    ("Signal handler called with signal %s and addr = %p with %ld program "
+     "states\n",
+     VG_(signame)(sigNo), (void *)addr, VG_(sizeXA)(program_states));
     if (sigNo == VKI_SIGSEGV && SE_(command_server)->using_fuzzed_io_vec) {
       fix_address_space();
     } else {
