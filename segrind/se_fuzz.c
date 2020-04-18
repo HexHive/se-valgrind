@@ -31,7 +31,12 @@ static UInt rand_uint(UInt *seed, UInt max) {
   if (max == 0) {
     return 0;
   }
-  return VG_(random)(seed) % max;
+  if (max > SE_DEFAULT_ALLOC_SPACE && rand_bool(seed)) {
+    return rand_uint(seed, SE_DEFAULT_ALLOC_SPACE);
+  }
+  UInt result = VG_(random)(seed) % max;
+
+  return result;
 }
 
 /**
@@ -210,9 +215,9 @@ void SE_(fuzz_region)(UInt *seed, Addr start, Addr end) {
   UInt idx;
   do {
     idx = rand_uint(seed, sizeof(funcs) / sizeof(void *));
-    //        VG_(umsg)
-    //        ("Fuzzing [%p - %p] (%lu bytes) using function %u\n", (void
-    //        *)start,
-    //         (void *)end, end - start + 1, idx);
+    //            VG_(umsg)
+    //            ("Fuzzing [%p - %p] (%lu bytes) using function %u\n", (void
+    //            *)start,
+    //             (void *)end, end - start + 1, idx);
   } while (!(*funcs[idx])(seed, (UChar *)start, end - start + 1));
 }

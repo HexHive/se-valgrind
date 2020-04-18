@@ -329,8 +329,8 @@ void SE_(remove_IRExpr_taint)(IRExpr *irExpr, Word idx) {
 void SE_(taint_IRExpr)(IRExpr *irExpr, Word idx) {
   SE_(tainted_loc) *loc = create_loc(irExpr, idx, NULL);
   if (loc->type == taint_invalid) {
-    VG_(printf)("\tInvalid loc created for ");
-    ppIRExpr(irExpr);
+    //    VG_(printf)("\tInvalid loc created for ");
+    //    ppIRExpr(irExpr);
     VG_(printf)("\n");
     VG_(OSetGen_FreeNode)(tainted_locations_, loc);
     return;
@@ -342,13 +342,20 @@ void SE_(taint_IRExpr)(IRExpr *irExpr, Word idx) {
     }
     //    VG_(printf)("\tTainting ");
     //    SE_(ppTaintedLocation)(loc);
+    //    if (loc->type == taint_reg) {
+    //      UChar *tmp = VG_(indexXA)(program_states_,
+    //      VG_(sizeXA)(program_states_) - 1); UChar *curr =
+    //      VG_(indexXA)(program_states_, idx); VG_(printf)
+    //      ("\tAt end, Reg %d = 0x%lx\n\tcurrent val = 0x%0lx\n",
+    //      loc->location.offset,
+    //       *(Addr *)(tmp + loc->location.offset), *(Addr*)(curr +
+    //       loc->location.offset));
+    //    }
 
     /* The first tainted location is the faulting instruction,
-     * the second tainted location is the load of the invalid address, and
-     * the third tainted location is where the invalid address came from,
-     * which is what we are interested in finding.
+     * the second tainted location is the load of the invalid address.
      */
-    if (taint_count == 3 && tainted_address.type == taint_invalid &&
+    if (taint_count == 2 && tainted_address.type == taint_invalid &&
         (loc->type == taint_addr || loc->type == taint_reg)) {
       tainted_address.type = taint_addr;
       switch (loc->type) {
@@ -363,17 +370,19 @@ void SE_(taint_IRExpr)(IRExpr *irExpr, Word idx) {
       default:
         tl_assert(0);
       }
-      switch (irExpr->tag) {
-      case Iex_Unop:
-      case Iex_Binop:
-        adjust_tainted_location(irExpr, &tainted_address);
-        break;
-      default:
-        break;
+      if (SE_(get_IRExpr)(irExpr)->tag != Iex_Const) {
+        switch (irExpr->tag) {
+        case Iex_Unop:
+        case Iex_Binop:
+          adjust_tainted_location(irExpr, &tainted_address);
+          break;
+        default:
+          break;
+        }
       }
-      //            VG_(printf)
-      //            ("\ttainted_address.addr = %p\n", (void
-      //            *)tainted_address.location.addr);
+      //      VG_(printf)
+      //      ("\ttainted_address.addr = %p\n", (void
+      //      *)tainted_address.location.addr);
     }
 
     VG_(OSetGen_Insert)(tainted_locations_, loc);

@@ -191,7 +191,7 @@ static void fuzz_input_pointers(SE_(io_vec) * io_vec, UInt *seed) {
 
   UInt size = VG_(sizeRangeMap)(io_vec->initial_state.address_state);
   Addr obj_start = 0;
-  VG_(umsg)("Fuzzing allocated areas with seed %u\n", *seed);
+  //  VG_(umsg)("Fuzzing allocated areas with seed %u\n", *seed);
   for (Word i = 0; i < size; i++) {
     UWord key_min, key_max, val;
     VG_(indexRangeMap)
@@ -224,7 +224,10 @@ static void fuzz_input_pointers(SE_(io_vec) * io_vec, UInt *seed) {
      i);
     if (val > 0) {
       tl_assert(sizeof(val) >= (addr_max - addr_min));
-      VG_(memcpy)((void *)addr_min, &val, addr_max - addr_min);
+      VG_(memcpy)((void *)addr_min, &val, addr_max - addr_min + 1);
+      //      VG_(umsg)
+      //      ("Set %p to 0x%0lx and should be 0x%lx\n", (void *)addr_min,
+      //       *(Addr *)(addr_min), val);
     }
   }
 }
@@ -238,7 +241,7 @@ static void fuzz_registers(SE_(io_vec) * io_vec, UInt *seed) {
   tl_assert(io_vec);
   tl_assert(seed);
 
-  VG_(umsg)("Fuzzing registers\n");
+  //  VG_(umsg)("Fuzzing registers\n");
   /* Fuzz registers, if they aren't assigned to an allocated pointer */
   Int gpr_offsets[] = SE_O_GPRS;
   for (Int i = 0; i < SE_NUM_GPRS; i++) {
@@ -330,7 +333,7 @@ static Bool handle_set_io_vec(SE_(cmd_server) * server,
 
   //  SE_(ppIOVec)(server->current_io_vec);
   UInt seed = server->current_io_vec->random_seed;
-  VG_(umsg)("Seed = %u\n", seed);
+  //  VG_(umsg)("Seed = %u\n", seed);
 
   /* Establish valid memory state */
   UInt size =
@@ -412,15 +415,15 @@ static Bool handle_command(SE_(cmd_server) * server) {
     break;
   case SEMSG_EXECUTE:
     msg_handled = SE_(set_server_state)(server, SERVER_EXECUTING);
-    if (!msg_handled) {
-      VG_(umsg)
-      ("Could not set execution state from %s\n",
-       SE_(server_state_str)(server->current_state));
-    } else {
-      VG_(umsg)
-      ("Server state set to %s\n",
-       SE_(server_state_str)(server->current_state));
-    }
+    //    if (!msg_handled) {
+    //      VG_(umsg)
+    //      ("Could not set execution state from %s\n",
+    //       SE_(server_state_str)(server->current_state));
+    //    } else {
+    //      VG_(umsg)
+    //      ("Server state set to %s\n",
+    //       SE_(server_state_str)(server->current_state));
+    //    }
     /* We want to fork a new process to actually execute the target code */
     parent_should_fork = True;
     break;
@@ -472,6 +475,11 @@ static Addr allocate_new_object(SE_(cmd_server) * server, SizeT size,
     Int addr = sr_Res(res);
     VG_(memcpy)(&new_alloc_loc, &addr, sizeof(addr));
   } else {
+    if (!VG_(am_is_valid_for_client_or_free_or_resvn)(
+            location, size, VKI_PROT_READ | VKI_PROT_WRITE)) {
+      VG_(umsg)("%p cannot ever be a valid client address\n", (void *)location);
+      return 0;
+    }
     new_alloc_loc = location;
   }
 
@@ -479,7 +487,7 @@ static Addr allocate_new_object(SE_(cmd_server) * server, SizeT size,
     return 0;
   }
 
-  VG_(umsg)("Allocating %lu bytes at %p\n", size, (void *)new_alloc_loc);
+  //  VG_(umsg)("Allocating %lu bytes at %p\n", size, (void *)new_alloc_loc);
 
   /* Mark the start and end points of the object */
   VG_(bindRangeMap)
@@ -504,18 +512,20 @@ static Addr allocate_new_object(SE_(cmd_server) * server, SizeT size,
  * @param obj_end
  * @param new_start
  * @param new_end
+ * @param new_bytes
  * @return
  */
 static Bool reallocate_obj(SE_(cmd_server) * server, SizeT new_size,
                            Addr obj_start, Addr obj_end, Addr *new_start,
-                           Addr *new_end) {
+                           Addr *new_end, PtrdiffT new_bytes) {
   tl_assert(server);
   tl_assert(new_start);
   tl_assert(new_end);
   tl_assert(new_size > 0);
   tl_assert(obj_start < obj_end);
 
-  SizeT current_size = obj_end - obj_start;
+  SizeT current_size = obj_end - obj_start + 1;
+  //  VG_(umsg)("current_size = %lu\tnew_size = %lu\n", current_size, new_size);
   if (new_size <= current_size) {
     *new_start = obj_start;
     *new_end = obj_end;
@@ -536,24 +546,64 @@ static Bool reallocate_obj(SE_(cmd_server) * server, SizeT new_size,
 
     tl_assert(val & OBJ_ALLOCATED_MAGIC);
 
-    // Ensure that the end bit is never set
+    // Ensure that bounds are correctly maintained
     if (val & OBJ_END_MAGIC) {
       val ^= OBJ_END_MAGIC;
     }
+    if (val & OBJ_START_MAGIC) {
+      val ^= OBJ_START_MAGIC;
+    }
 
-    VG_(bindRangeMap)
-    (server->current_io_vec->initial_state.address_state, new_addr + i,
-     new_addr + i, val);
+    Addr dest = new_addr + i;
+    if (new_bytes < 0) {
+      dest += -new_bytes;
+    }
 
     /* Copy over any pointers */
     if (val & ALLOCATED_SUBPTR_MAGIC) {
+      UWord tmp_min, tmp_max, tmp_val;
+      VG_(lookupRangeMap)
+      (&tmp_min, &tmp_max, &tmp_val,
+       server->current_io_vec->initial_state.pointer_member_locations,
+       obj_start + i);
+      tl_assert(tmp_val > 0);
+      //      VG_(umsg)
+      //      ("Copying pointer byte from %p to %p\n", (void *)(obj_start + i),
+      //       (void *)(new_addr + i));
       VG_(memcpy)
-      ((void *)(new_addr + i), (void *)(obj_start + i), sizeof(char));
+      ((void *)(new_addr + i), (void *)(obj_start + i), sizeof(Char));
+      VG_(bindRangeMap)
+      (server->current_io_vec->initial_state.pointer_member_locations,
+       obj_start + i, obj_start + i, 0);
+      VG_(bindRangeMap)
+      (server->current_io_vec->initial_state.pointer_member_locations,
+       new_addr + i, new_addr + i, tmp_val);
     }
+
+    VG_(bindRangeMap)
+    (server->current_io_vec->initial_state.address_state, dest, dest, val);
   }
 
   VG_(bindRangeMap)
   (server->current_io_vec->initial_state.address_state, obj_start, obj_end, 0);
+
+  UInt map_size = VG_(sizeRangeMap)(
+      server->current_io_vec->initial_state.pointer_member_locations);
+  for (UInt i = 0; i < map_size; i++) {
+    VG_(indexRangeMap)
+    (&min_addr, &max_addr, &val,
+     server->current_io_vec->initial_state.pointer_member_locations, i);
+    //    if (val > 0) {
+    //      VG_(umsg)
+    //      ("[ %p -- %p ] = 0x%lx\n", (void *)min_addr, (void *)max_addr, val);
+    //    }
+    if (val == obj_start) {
+      VG_(bindRangeMap)
+      (server->current_io_vec->initial_state.pointer_member_locations, min_addr,
+       max_addr, new_addr);
+    }
+  }
+
   Bool needs_discard;
   SysRes res =
       VG_(am_munmap_client)(&needs_discard, obj_start, obj_end - obj_start);
@@ -562,13 +612,13 @@ static Bool reallocate_obj(SE_(cmd_server) * server, SizeT new_size,
     ("Failed to unmap [%p -- %p] from client!\n", (void *)obj_start,
      (void *)obj_end);
   }
-
   *new_start = new_addr;
-  *new_end = new_addr + new_size;
+  *new_end = new_addr + new_size - 1;
 
-  VG_(umsg)
-  ("Reallocated object from [%p - %p] to [%p - %p]\n", (void *)obj_start,
-   (void *)obj_end, (void *)*new_start, (void *)*new_end);
+  //  VG_(umsg)
+  //  ("Reallocated object from [%p - %p] to [%p - %p]\n", (void *)obj_start,
+  //   (void *)obj_end, (void *)*new_start, (void *)*new_end);
+
   return True;
 }
 
@@ -587,8 +637,11 @@ static void set_pointer_submember(SE_(cmd_server) * server, Addr obj_start,
   tl_assert(server);
   tl_assert(obj_start);
   tl_assert(submember_offset >= 0);
-  tl_assert(obj_end - obj_start >= sizeof(Addr));
+  tl_assert(obj_end - obj_start + 1 >= sizeof(Addr));
 
+  //  VG_(umsg)
+  //  ("Setting %p + %lu = %p\n", (void *)obj_start, submember_offset,
+  //   (void *)ptr_val);
   UWord min_addr, max_addr, val;
   Addr pointer_start = obj_start + submember_offset;
   for (Int i = 0; i < sizeof(Addr); i++) {
@@ -598,17 +651,16 @@ static void set_pointer_submember(SE_(cmd_server) * server, Addr obj_start,
 
     tl_assert(val & OBJ_ALLOCATED_MAGIC);
 
-    if (!(val ^ ALLOCATED_SUBPTR_MAGIC)) {
-      val ^= ALLOCATED_SUBPTR_MAGIC;
-    }
+    val |= ALLOCATED_SUBPTR_MAGIC;
 
+    //    VG_(umsg)("Registering %p = %lu\n", (void *)(pointer_start + i), val);
     VG_(bindRangeMap)
     (server->current_io_vec->initial_state.address_state, pointer_start + i,
      pointer_start + i, val);
   }
   VG_(bindRangeMap)
   (server->current_io_vec->initial_state.pointer_member_locations,
-   (UWord)pointer_start, (UWord)pointer_start + sizeof(Addr), ptr_val);
+   (UWord)pointer_start, (UWord)pointer_start + sizeof(Addr) - 1, ptr_val);
 
   VG_(memcpy)((void *)pointer_start, &ptr_val, sizeof(Addr));
 }
@@ -624,26 +676,23 @@ static Bool lookup_obj(SE_(cmd_server) * server, Addr addr, Addr *obj_start,
   tl_assert(server);
   tl_assert(server->current_io_vec);
 
-  VG_(umsg)("Trying to find %p\n", (void *)addr);
+  //  VG_(umsg)("Trying to find %p\n", (void *)addr);
 
   UInt size =
       VG_(sizeRangeMap)(server->current_io_vec->initial_state.address_state);
 
   UWord min_addr, max_addr, val;
+  Bool in_obj = False;
   UWord obj_start_addr = 0, obj_end_addr = 0;
   for (Int i = 0; i < size; i++) {
     VG_(indexRangeMap)
     (&min_addr, &max_addr, &val,
      server->current_io_vec->initial_state.address_state, i);
 
-    val ^= OBJ_ALLOCATED_MAGIC;
-    if (val & ALLOCATED_SUBPTR_MAGIC) {
-      val ^= ALLOCATED_SUBPTR_MAGIC;
-    }
-
-    if ((val ^ OBJ_START_MAGIC) == 0) {
+    if (val & OBJ_START_MAGIC) {
       obj_start_addr = min_addr;
-    } else if ((val ^ OBJ_END_MAGIC) == 0) {
+      in_obj = True;
+    } else if (in_obj && (val & OBJ_END_MAGIC)) {
       obj_end_addr = max_addr;
 
       if (addr >= obj_start_addr && addr <= obj_end_addr) {
@@ -658,6 +707,7 @@ static Bool lookup_obj(SE_(cmd_server) * server, Addr addr, Addr *obj_start,
 
       obj_start_addr = 0;
       obj_end_addr = 0;
+      in_obj = False;
     }
   }
 
@@ -668,6 +718,89 @@ static Bool lookup_obj(SE_(cmd_server) * server, Addr addr, Addr *obj_start,
     *obj_end = 0;
   }
   return False;
+}
+
+/**
+ * @brief Searches the memory area around addr for allocated objects
+ * @param server
+ * @param addr
+ * @return
+ */
+static Bool object_nearby(SE_(cmd_server) * server, Addr addr,
+                          Addr *closest_min, Addr *closest_max) {
+  Addr min_addr = VG_PGROUNDDN(addr);
+  Addr max_addr = VG_PGROUNDUP(addr);
+  Addr curr;
+
+  Addr closest_low_start = 0, closest_low_end = 0;
+  Addr closest_high_start = 0, closest_high_end = 0;
+  //  VG_(umsg)("Searching for objects near %p\n", (void *)addr);
+
+  for (curr = addr; curr >= min_addr; curr -= sizeof(Int)) {
+    if (lookup_obj(server, curr, &closest_low_start, &closest_low_end)) {
+      break;
+    }
+  }
+
+  //  VG_(umsg)
+  //  ("closest_low: [ %p -- %p ]\n", (void *)closest_low_start,
+  //   (void *)closest_low_end);
+
+  if (curr == addr && closest_low_start > 0) {
+    /* We are already in an object */
+    if (closest_min) {
+      *closest_min = closest_low_start;
+    }
+    if (closest_max) {
+      *closest_max = closest_low_end;
+    }
+    return True;
+  }
+
+  for (curr = addr; curr <= max_addr; curr += sizeof(Int)) {
+    if (lookup_obj(server, curr, &closest_high_start, &closest_high_end)) {
+      break;
+    }
+  }
+
+  //  VG_(umsg)
+  //  ("closest_high: [ %p -- %p ]\n", (void *)closest_high_start,
+  //   (void *)closest_high_end);
+
+  if (closest_low_start == 0 && closest_high_start == 0) {
+    /* There are no objects nearby */
+    if (closest_min) {
+      *closest_min = 0;
+    }
+    if (closest_max) {
+      *closest_max = 0;
+    }
+
+    return False;
+  }
+
+  SizeT distance_low = addr - closest_low_end;
+  /* If no high object is found, then this will be negative,
+   * but since SizeT is unsigned, then the resulting number
+   * will be a very high positive number */
+  SizeT distance_high = closest_high_start - addr;
+  if (distance_high > distance_low) {
+    if (closest_min) {
+      *closest_min = closest_low_start;
+    }
+    if (closest_max) {
+      *closest_max = closest_low_end;
+    }
+  } else {
+    if (closest_min) {
+      *closest_min = closest_high_start;
+    }
+    if (closest_max) {
+      *closest_max = closest_high_end;
+    }
+  }
+
+  return True;
 }
 
 /**
@@ -688,6 +821,7 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
   Word count, i;
   Addr obj_loc = 0;
   Word bytes_read = 0;
+  Addr obj_start = 0, obj_end = 0;
 
   SE_(register_value) * reg_val;
 
@@ -706,16 +840,18 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
      sizeof(tainted_loc));
     bytes_read += sizeof(tainted_loc);
 
-    if (tainted_loc.type == taint_addr || tainted_loc.type == taint_stack) {
-      VG_(umsg)
-      ("Received tainted %s %p\n",
-       tainted_loc.type == taint_stack ? "stack address" : "address",
-       (void *)tainted_loc.location.addr);
-    } else if (tainted_loc.type == taint_reg) {
-      VG_(umsg)("Received tainted register %d\n", tainted_loc.location.offset);
-    } else {
-      VG_(umsg)("Received invalid taint\n");
-    }
+    //    if (tainted_loc.type == taint_addr || tainted_loc.type == taint_stack)
+    //    {
+    //      VG_(umsg)
+    //      ("Received tainted %s %p\n",
+    //       tainted_loc.type == taint_stack ? "stack address" : "address",
+    //       (void *)tainted_loc.location.addr);
+    //    } else if (tainted_loc.type == taint_reg) {
+    //      VG_(umsg)("Received tainted register %d\n",
+    //      tainted_loc.location.offset);
+    //    } else {
+    //      VG_(umsg)("Received invalid taint\n");
+    //    }
 
     switch (tainted_loc.type) {
     case taint_reg:
@@ -753,8 +889,6 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
           return False;
         }
 
-        Addr obj_start, obj_end;
-
         if (!lookup_obj(server, (Addr)reg_val->value, &obj_start, &obj_end)) {
           VG_(umsg)
           ("Failed to find expected object allocated to register %d\n",
@@ -767,8 +901,8 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
         SizeT ptr_member_offset = invalid_addr.location.addr - obj_start;
         SizeT needed_size = ptr_member_offset + sizeof(Addr);
         if (!reallocate_obj(server, needed_size, obj_start, obj_end, &obj_start,
-                            &obj_end)) {
-          VG_(printf)
+                            &obj_end, 0)) {
+          VG_(umsg)
           ("Could not reallocate object for register %d\n",
            tainted_loc.location.offset);
           return False;
@@ -794,9 +928,9 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
           VG_(umsg)("Failed to allocate new object\n");
           return False;
         }
-        VG_(umsg)
-        ("Setting register %d to %p\n", tainted_loc.location.offset,
-         (void *)(obj_loc));
+        //        VG_(umsg)
+        //        ("Setting register %d to %p\n", tainted_loc.location.offset,
+        //         (void *)(obj_loc));
         reg_val->is_ptr = True;
         reg_val->value = obj_loc;
       }
@@ -818,7 +952,8 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
       /* TODO: A stack object needs to be resized */
       /* Purposeful fallthrough */
     case taint_addr:
-      if (!lookup_obj(server, tainted_loc.location.addr, 0, 0)) {
+      if (!object_nearby(server, invalid_addr.location.addr, &obj_start,
+                         &obj_end)) {
         if (!VG_(am_is_valid_for_client)(tainted_loc.location.addr,
                                          SE_DEFAULT_ALLOC_SPACE,
                                          VKI_PROT_READ | VKI_PROT_WRITE)) {
@@ -839,14 +974,49 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
           VG_(umsg)("Failed to allocate object\n");
           return False;
         }
-        VG_(umsg)
-        ("Registered %p as an object\n", (void *)tainted_loc.location.addr);
+        //        VG_(umsg)
+        //        ("Registered %p as an object\n", (void
+        //        *)tainted_loc.location.addr);
       } else {
-        /* TODO: Implement substructure pointer and object resizing */
-        VG_(umsg)
-        ("Could not handle tainted substructure pointer location type:\n\t");
-        SE_(ppTaintedLocation)(&tainted_loc);
-        return False;
+        PtrdiffT offset = invalid_addr.location.addr - obj_start;
+        SizeT orig_size = obj_end - obj_start + 1;
+        SizeT new_size;
+        if (offset > 0 && offset >= orig_size) {
+          new_size = invalid_addr.location.addr + sizeof(Addr) - obj_start;
+        } else if (offset > 0 && offset <= orig_size) {
+          new_size = orig_size;
+        } else {
+          new_size = obj_end - invalid_addr.location.addr + 1;
+        }
+
+        //        VG_(umsg)
+        //        ("Existing object found at [ %p -- %p ] at or near %p. "
+        //         "Reallocating to hold %lu bytes.\n",
+        //         (void *)obj_start, (void *)obj_end, (void
+        //         *)invalid_addr.location.addr, new_size);
+        Addr new_start, new_end;
+        if (!reallocate_obj(server, new_size, obj_start, obj_end, &new_start,
+                            &new_end, offset)) {
+          VG_(umsg)
+          ("Could not reallocate object at %p to accomodate new size of %lu\n",
+           (void *)obj_start, new_size);
+          return False;
+        }
+
+        Addr sub_pointer =
+            allocate_new_object(server, SE_DEFAULT_ALLOC_SPACE, (Addr)NULL);
+        if (!sub_pointer) {
+          VG_(umsg)("Could not allocate new subpointer object!\n");
+          return False;
+        }
+        if (offset < 0) {
+          offset = 0;
+        }
+
+        set_pointer_submember(server, new_start, new_end, offset, sub_pointer);
+        //        VG_(umsg)
+        //        ("Subpointer at %p = 0x%0lx\n", (void *)(new_start + offset),
+        //         *(Addr *)(new_start + offset));
       }
       break;
     default:
@@ -898,16 +1068,14 @@ static Bool wait_for_child(SE_(cmd_server) * server) {
   tl_assert(server->current_state == SERVER_EXECUTING ||
             server->current_state == SERVER_GETTING_INIT_STATE);
 
-  Int status;
-  Int wait_result;
   Bool should_fork = False;
 
   struct vki_pollfd fds[1];
   fds[0].fd = server->executor_pipe[0];
   fds[0].events = VKI_POLLIN | VKI_POLLHUP | VKI_POLLPRI;
-  VG_(umsg)
-  ("Waiting for child process %d for %u ms\n", server->running_pid,
-   SE_(MaxDuration));
+  //  VG_(umsg)
+  //  ("Waiting for child process %d for %u ms\n", server->running_pid,
+  //   SE_(MaxDuration));
   fds[0].revents = 0;
   SysRes result =
       VG_(poll)(fds, sizeof(fds) / sizeof(struct vki_pollfd), SE_(MaxDuration));
@@ -930,8 +1098,9 @@ static Bool wait_for_child(SE_(cmd_server) * server) {
       VG_(umsg)("Reading from executor failed\n");
       report_error(server, "Error reading executor pipe");
     } else {
-      VG_(umsg)
-      ("Got %s message from executor\n", SE_(msg_type_str)(cmd_msg->msg_type));
+      //      VG_(umsg)
+      //      ("Got %s message from executor\n",
+      //      SE_(msg_type_str)(cmd_msg->msg_type));
       if (server->using_fuzzed_io_vec && cmd_msg->msg_type == SEMSG_NEW_ALLOC) {
         should_fork = handle_new_alloc(server, cmd_msg);
         if (!should_fork) {
@@ -972,10 +1141,11 @@ static Bool wait_for_child(SE_(cmd_server) * server) {
   }
 
 cleanup:
-  wait_result = VG_(waitpid)(server->running_pid, &status, VKI_WNOHANG);
-  if (wait_result < 0 || (!WIFEXITED(status) && !WIFSIGNALED(status))) {
-    VG_(kill)(server->running_pid, VKI_SIGKILL);
-  }
+  //  wait_result = VG_(waitpid)(server->running_pid, &status, VKI_WNOHANG);
+  //  VG_(umsg)("Wait result = %d\tstatus = %d\n", wait_result, status);
+  //  if (wait_result < 0 || (!WIFEXITED(status) && !WIFSIGNALED(status))) {
+  VG_(kill)(server->running_pid, VKI_SIGKILL);
+  //  }
 
   server->running_pid = -1;
   VG_(close)(server->executor_pipe[0]);
@@ -1109,9 +1279,9 @@ void SE_(start_server)(SE_(cmd_server) * server, ThreadId executor_tid) {
     fds[0].events = VKI_POLLIN | VKI_POLLHUP | VKI_POLLPRI;
     fds[0].revents = 0;
 
-    VG_(umsg)
-    ("Current server status: %s\n",
-     SE_(server_state_str)(server->current_state));
+    //    VG_(umsg)
+    //    ("Current server status: %s\n",
+    //     SE_(server_state_str)(server->current_state));
     if (sr_isError(
             VG_(poll)(fds, sizeof(fds) / sizeof(struct vki_pollfd), -1))) {
       VG_(tool_panic)("VG_(poll) failed!\n");
@@ -1123,11 +1293,11 @@ void SE_(start_server)(SE_(cmd_server) * server, ThreadId executor_tid) {
         if (SE_(fork_and_execute)(server)) {
           return;
         }
-      } else {
+      } /*else {
         VG_(umsg)
         ("Server NOT forking with status %s\n",
          SE_(server_state_str)(server->current_state));
-      }
+      }*/
     } else if ((fds[0].revents & VKI_POLLHUP) == VKI_POLLHUP) {
       VG_(umsg)("Server write command pipe closed...\n");
       return;

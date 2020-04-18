@@ -9,6 +9,30 @@
 
 char *global1 = NULL;
 
+struct large_struct {
+  char *addr1;
+  char *addr2;
+  int i1;
+  char c1;
+};
+
+struct large_struct *global2;
+
+int __attribute__((noinline)) access_large(int a) {
+  //  printf("&global2 = %p", &global2);
+  if (global2->addr1[0] == a) {
+    return 1;
+  } else if (global2->c1 == a) {
+    return 2;
+  } else if (global2->addr2[0] == a) {
+    return 3;
+  } else if (global2->i1 == a) {
+    return 4;
+  }
+
+  return 0;
+}
+
 int __attribute__((noinline)) foo(int *a, int b, int c) {
   //  printf("foo called with a = %p b = %d and c = %d\n", a, b, c);
   *a = b / c;
@@ -17,7 +41,7 @@ int __attribute__((noinline)) foo(int *a, int b, int c) {
 
 int __attribute__((noinline)) is_pid_and_argc_even(int argc) {
   pid_t pid = getpid();
-  printf("argc = %d, pid = %d\n", argc, pid);
+  //  printf("argc = %d, pid = %d\n", argc, pid);
   if (argc % 2 == 0 && pid % 2 == 0) {
     return 1;
   }

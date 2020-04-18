@@ -7,7 +7,7 @@
 
 #define SE_(str) VGAPPEND(vgSegrind_, str)
 
-#define DEFAULT_DURATION ((UInt)10000)
+#define DEFAULT_DURATION ((UInt)1000)
 #define DEFAULT_ATTEMPTS ((UInt)25)
 #define WARN_ATTEMPTS 10
 #define DEFAULT_MAX_INSTR ((ULong)1000000UL)
