@@ -579,6 +579,11 @@ static Bool reallocate_obj(SE_(cmd_server) * server, SizeT new_size,
       (server->current_io_vec->initial_state.pointer_member_locations,
        new_addr + i, new_addr + i, tmp_val);
     }
+    if (i == 0) {
+      val |= OBJ_START_MAGIC;
+    } else if (i == current_size - 1) {
+      val |= OBJ_END_MAGIC;
+    }
 
     VG_(bindRangeMap)
     (server->current_io_vec->initial_state.address_state, dest, dest, val);
