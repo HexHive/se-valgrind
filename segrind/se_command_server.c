@@ -840,18 +840,20 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
      sizeof(tainted_loc));
     bytes_read += sizeof(tainted_loc);
 
-    //    if (tainted_loc.type == taint_addr || tainted_loc.type == taint_stack)
-    //    {
-    //      VG_(umsg)
-    //      ("Received tainted %s %p\n",
-    //       tainted_loc.type == taint_stack ? "stack address" : "address",
-    //       (void *)tainted_loc.location.addr);
-    //    } else if (tainted_loc.type == taint_reg) {
-    //      VG_(umsg)("Received tainted register %d\n",
-    //      tainted_loc.location.offset);
-    //    } else {
-    //      VG_(umsg)("Received invalid taint\n");
-    //    }
+    if (tainted_loc.type == taint_addr || tainted_loc.type == taint_stack) {
+      VG_(umsg)
+      ("Received tainted %s %p\n",
+       tainted_loc.type == taint_stack ? "stack address" : "address",
+       (void *)tainted_loc.location.addr);
+      AddrInfo a;
+      VG_(describe_addr)(VG_(current_DiEpoch)(), tainted_loc.location.addr, &a);
+      VG_(pp_addrinfo)(tainted_loc.location.addr, &a);
+      VG_(clear_addrinfo)(&a);
+    } else if (tainted_loc.type == taint_reg) {
+      VG_(umsg)("Received tainted register %d\n", tainted_loc.location.offset);
+    } else {
+      VG_(umsg)("Received invalid taint\n");
+    }
 
     switch (tainted_loc.type) {
     case taint_reg:
