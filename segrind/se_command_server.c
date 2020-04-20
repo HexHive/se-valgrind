@@ -938,6 +938,9 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
       }
       break;
     case taint_stack:
+      if (!tainted_loc.location.addr) {
+        return False;
+      }
       if (tainted_loc.location.addr < server->min_stack_ptr) {
         /* The stack needs to be expanded */
         if (!VG_(extend_stack)(server->executor_tid,
@@ -954,6 +957,9 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
       /* TODO: A stack object needs to be resized */
       /* Purposeful fallthrough */
     case taint_addr:
+      if (!tainted_loc.location.addr) {
+        return False;
+      }
       if (!object_nearby(server, invalid_addr.location.addr, &obj_start,
                          &obj_end)) {
         if (!VG_(am_is_valid_for_client)(tainted_loc.location.addr,
