@@ -33,6 +33,11 @@ typedef struct se_tainted_location {
   } location;
 } SE_(tainted_loc);
 
+typedef struct se_taint_info_ {
+  SE_(tainted_loc) taint_source; /* The source of the faulting address */
+  Addr faulting_address;         /* The address which caused the fault */
+} SE_(taint_info);
+
 /**
  * @brief Compares two tainted locations
  * @param key
@@ -44,8 +49,9 @@ Word SE_(taint_cmp)(const void *key, const void *elem);
 /**
  * @brief Start taint analysis
  * @param program_states
+ * @param the faulting_address
  */
-void SE_(init_taint_analysis)(XArray *program_states);
+void SE_(init_taint_analysis)(XArray *program_states, Addr addr);
 
 /**
  * @brief Frees resources allocated for taint analysis
@@ -147,6 +153,6 @@ Bool SE_(IRExpr_contains_load)(const IRExpr *irExpr);
  * @brief Returns the first tainted address location, or NULL if there isn't any
  * @return
  */
-const SE_(tainted_loc) * SE_(get_tainted_address)(void);
+const SE_(taint_info) * SE_(get_taint_info)(void);
 
 #endif // SE_VALGRIND_SE_TAINT_H

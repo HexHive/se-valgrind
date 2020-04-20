@@ -93,7 +93,7 @@ static void SE_(report_failure_to_commander)(void);
 static void SE_(report_too_many_instrs_to_commander)(void);
 static SizeT SE_(write_msg_to_commander)(SE_(cmd_msg_t) msgtype, SizeT data_len,
                                          UChar *data);
-static void fix_address_space(void);
+static void fix_address_space(Addr);
 static IRDirty *make_call_to_record_current_state(Addr, IRType);
 static IRDirty *make_call_to_jump_to_target(void);
 static IRDirty *make_call_to_report_success(void);
@@ -335,7 +335,7 @@ static Addr get_IRSB_start(IRSB *irsb) {
  * |   t = u     |      Y     |     N     |  Taint(u); Remove(t)  |
  * |==============================================================|
  */
-static void fix_address_space() {
+static void fix_address_space(Addr invalid_addr) {
   tl_assert(VG_(sizeXA)(program_states) > 0);
 
   VexGuestArchState *current_state;
@@ -346,7 +346,7 @@ static void fix_address_space() {
   UWord irsb_start = 0, irsb_end, val;
   IRSB *irsb = NULL;
 
-  SE_(init_taint_analysis)(program_states);
+  SE_(init_taint_analysis)(program_states, invalid_addr);
   VexGuestArchState *last_state =
       VG_(indexXA)(program_states, VG_(sizeXA)(program_states) - 1);
   Addr faulting_addr = last_state->VG_INSTR_PTR;
@@ -418,8 +418,8 @@ static void fix_address_space() {
       Word orig_stmt_idx = stmt_idx;
       for (Int i = irsb->stmts_used - 1; i >= 0; i--) {
         IRStmt *stmt = irsb->stmts[i];
-        //                ppIRStmt(stmt);
-        //                VG_(printf)("\n");
+        //        ppIRStmt(stmt);
+        //        VG_(printf)("\n");
         Bool taint_found = SE_(taint_found)();
         switch (stmt->tag) {
         case Ist_IMark:
@@ -504,8 +504,8 @@ static void fix_address_space() {
   Word num_areas = VG_(OSetGen_Size)(tainted_locations);
   tl_assert(num_areas > 0);
 
-  SizeT buf_size =
-      sizeof(num_areas) + (num_areas + 1) * sizeof(SE_(tainted_loc));
+  SizeT buf_size = sizeof(num_areas) + (num_areas) * sizeof(SE_(tainted_loc)) +
+                   sizeof(SE_(taint_info));
   UChar *buf = VG_(malloc)(SE_TOOL_ALLOC_STR, buf_size);
   Word offset = 0;
   //  VG_(printf)("Tainted address ");
@@ -513,8 +513,8 @@ static void fix_address_space() {
   //  VG_(printf)("\n");
 
   VG_(memcpy)
-  (buf, SE_(get_tainted_address)(), sizeof(SE_(tainted_loc)));
-  offset += sizeof(SE_(tainted_loc));
+  (buf, SE_(get_taint_info)(), sizeof(SE_(taint_info)));
+  offset += sizeof(SE_(taint_info));
   VG_(memcpy)(buf + offset, &num_areas, sizeof(num_areas));
   offset += sizeof(num_areas);
   SE_(tainted_loc) * loc;
@@ -541,7 +541,7 @@ static void SE_(signal_handler)(Int sigNo, Addr addr) {
      "states\n",
      VG_(signame)(sigNo), (void *)addr, VG_(sizeXA)(program_states));
     if (sigNo == VKI_SIGSEGV && SE_(command_server)->using_fuzzed_io_vec) {
-      fix_address_space();
+      fix_address_space(addr);
     } else {
       SE_(report_failure_to_commander)();
     }
@@ -597,6 +597,7 @@ static void SE_(thread_creation)(ThreadId tid, ThreadId child) {
     target_name = VG_(strdup)(SE_TOOL_ALLOC_STR, fnname);
     tl_assert(VG_(strlen)(target_name) > 0);
     VG_(umsg)("Executing %s\n", target_name);
+    //    SE_(ppIOVec)(SE_(command_server)->current_io_vec);
   }
 }
 
@@ -686,13 +687,12 @@ static void record_current_state(Addr addr) {
     VG_(get_shadow_regs_area)
     (target_id, (UChar *)&current_state, 0, 0, sizeof(current_state));
 
-    //            const HChar *fnname;
-    //            VG_(get_fnname)
-    //            (VG_(current_DiEpoch)(), current_state.VG_INSTR_PTR, &fnname);
-    //            VG_(umsg)
-    //            ("Recording state for %p/%p (%s)\n", (void
-    //            *)current_state.VG_INSTR_PTR,
-    //             (void *)addr, fnname);
+    const HChar *fnname;
+    VG_(get_fnname)
+    (VG_(current_DiEpoch)(), current_state.VG_INSTR_PTR, &fnname);
+    VG_(umsg)
+    ("Recording state for %p/%p (%s)\n", (void *)current_state.VG_INSTR_PTR,
+     (void *)addr, fnname);
     //        VG_(printf)("RBP = %p\n", (void*)current_state.VG_FRAME_PTR);
 
     current_state.VG_INSTR_PTR = addr;
@@ -1009,9 +1009,10 @@ static IRSB *SE_(instrument)(VgCallbackClosure *closure, IRSB *bb,
                              IRType hWordTy) {
   IRSB *bbOut = bb;
 
+  //  VG_(umsg)("Instrumenting code\n");
   if (client_running && main_replaced) {
     bbOut = SE_(instrument_target)(bb, gWordTy);
-    //        ppIRSB(bbOut);
+    //            ppIRSB(bbOut);
   } else if (client_running && !main_replaced && !target_called) {
     bbOut = SE_(replace_main_reference)(bb);
   }

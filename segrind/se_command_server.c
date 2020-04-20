@@ -197,8 +197,9 @@ static void fuzz_input_pointers(SE_(io_vec) * io_vec, UInt *seed) {
     VG_(indexRangeMap)
     (&key_min, &key_max, &val, io_vec->initial_state.address_state, i);
 
-    //        VG_(umsg)("\t[0x%lx - 0x%lx] = %lu %d\n", key_min, key_max, val,
-    //        val & OBJ_END_MAGIC);
+    //    VG_(umsg)
+    //    ("\t[0x%lx - 0x%lx] = %lu %lu\n", key_min, key_max, val,
+    //     val & OBJ_END_MAGIC);
 
     if (val & OBJ_START_MAGIC) {
       obj_start = (Addr)key_min;
@@ -292,7 +293,6 @@ static Bool fuzz_program_state(SE_(cmd_server) * server) {
   server->using_fuzzed_io_vec = True;
   server->using_existing_io_vec = False;
 
-  /* Fuzz input pointers */
   fuzz_input_pointers(server->current_io_vec, &SE_(seed));
   fuzz_registers(server->current_io_vec, &SE_(seed));
 
@@ -681,7 +681,7 @@ static Bool lookup_obj(SE_(cmd_server) * server, Addr addr, Addr *obj_start,
   tl_assert(server);
   tl_assert(server->current_io_vec);
 
-  //  VG_(umsg)("Trying to find %p\n", (void *)addr);
+  //    VG_(umsg)("Trying to find %p\n", (void *)addr);
 
   UInt size =
       VG_(sizeRangeMap)(server->current_io_vec->initial_state.address_state);
@@ -733,6 +733,10 @@ static Bool lookup_obj(SE_(cmd_server) * server, Addr addr, Addr *obj_start,
  */
 static Bool object_nearby(SE_(cmd_server) * server, Addr addr,
                           Addr *closest_min, Addr *closest_max) {
+  if (addr == 0) {
+    return False;
+  }
+
   Addr min_addr = VG_PGROUNDDN(addr);
   Addr max_addr = VG_PGROUNDUP(addr);
   Addr curr;
@@ -830,12 +834,11 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
 
   SE_(register_value) * reg_val;
 
-  SE_(tainted_loc) invalid_addr;
+  SE_(taint_info) taint_info;
   SE_(tainted_loc) tainted_loc;
   VG_(memcpy)
-  (&invalid_addr, (UChar *)new_alloc_msg->data + bytes_read,
-   sizeof(SE_(tainted_loc)));
-  bytes_read += sizeof(SE_(tainted_loc));
+  (&taint_info, (UChar *)new_alloc_msg->data + bytes_read, sizeof(taint_info));
+  bytes_read += sizeof(taint_info);
 
   VG_(memcpy)(&count, (UChar *)new_alloc_msg->data + bytes_read, sizeof(Word));
   bytes_read += sizeof(Word);
@@ -856,6 +859,7 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
       VG_(clear_addrinfo)(&a);
     } else if (tainted_loc.type == taint_reg) {
       VG_(umsg)("Received tainted register %d\n", tainted_loc.location.offset);
+      VG_(umsg)("Invalid addr: %p\n", (void *)taint_info.faulting_address);
     } else {
       VG_(umsg)("Received invalid taint\n");
     }
@@ -891,10 +895,23 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
 
       if (reg_val->is_ptr) {
         /* This register has been allocated, so extend the existing object */
-        if (invalid_addr.type != taint_addr) {
+        if (taint_info.taint_source.type != taint_addr) {
           VG_(umsg)("Invalid tainted address\n");
           return False;
         }
+
+        if (!object_nearby(server, taint_info.faulting_address, &obj_start,
+                           &obj_end)) {
+          /* The address is waaaay invalid, so just fuzz again */
+          VG_(umsg)
+          ("Faulting address %p way off\n",
+           (void *)taint_info.faulting_address);
+          return False;
+        }
+
+        VG_(umsg)
+        ("Object near %p found at %p\n", (void *)taint_info.faulting_address,
+         (void *)obj_start);
 
         if (!lookup_obj(server, (Addr)reg_val->value, &obj_start, &obj_end)) {
           VG_(umsg)
@@ -905,7 +922,8 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
 
         /* Allocate larger object and free existing object if needed, and
          * set sub-member as a pointer */
-        SizeT ptr_member_offset = invalid_addr.location.addr - obj_start;
+        SizeT ptr_member_offset =
+            taint_info.taint_source.location.addr - obj_start;
         SizeT needed_size = ptr_member_offset + sizeof(Addr);
         if (!reallocate_obj(server, needed_size, obj_start, obj_end, &obj_start,
                             &obj_end, 0)) {
@@ -965,24 +983,24 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
       if (!tainted_loc.location.addr) {
         return False;
       }
-      if (!object_nearby(server, invalid_addr.location.addr, &obj_start,
+      if (!object_nearby(server, taint_info.faulting_address, &obj_start,
                          &obj_end)) {
-        if (!VG_(am_is_valid_for_client)(tainted_loc.location.addr,
+        if (!VG_(am_is_valid_for_client)(taint_info.faulting_address,
                                          SE_DEFAULT_ALLOC_SPACE,
                                          VKI_PROT_READ | VKI_PROT_WRITE)) {
           SysRes res = VG_(am_mmap_anon_fixed_client)(
-              VG_PGROUNDDN(tainted_loc.location.addr), VKI_PAGE_SIZE,
+              VG_PGROUNDDN(taint_info.faulting_address), VKI_PAGE_SIZE,
               VKI_PROT_READ | VKI_PROT_WRITE);
           if (sr_isError(res)) {
             VG_(umsg)
             ("Failed to memory map location %p: %lu\n",
-             (void *)VG_PGROUNDDN((void *)tainted_loc.location.addr),
+             (void *)VG_PGROUNDDN((void *)taint_info.faulting_address),
              sr_Err(res));
             return False;
           }
         }
         obj_loc = allocate_new_object(server, SE_DEFAULT_ALLOC_SPACE,
-                                      tainted_loc.location.addr);
+                                      taint_info.faulting_address);
         if (!obj_loc) {
           VG_(umsg)("Failed to allocate object\n");
           return False;
@@ -991,15 +1009,16 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
         //        ("Registered %p as an object\n", (void
         //        *)tainted_loc.location.addr);
       } else {
-        PtrdiffT offset = invalid_addr.location.addr - obj_start;
+        PtrdiffT offset = taint_info.taint_source.location.addr - obj_start;
         SizeT orig_size = obj_end - obj_start + 1;
         SizeT new_size;
         if (offset > 0 && offset >= orig_size) {
-          new_size = invalid_addr.location.addr + sizeof(Addr) - obj_start;
+          new_size =
+              taint_info.taint_source.location.addr + sizeof(Addr) - obj_start;
         } else if (offset > 0 && offset <= orig_size) {
           new_size = orig_size;
         } else {
-          new_size = obj_end - invalid_addr.location.addr + 1;
+          new_size = obj_end - taint_info.taint_source.location.addr + 1;
         }
 
         //        VG_(umsg)
@@ -1039,8 +1058,10 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
     }
   }
 
-  SE_(set_server_state)(server, SERVER_WAIT_FOR_CMD);
-  fuzz_program_state(server);
+  SE_(set_server_state)(server, SERVER_FUZZING);
+  UInt seed = server->current_io_vec->random_seed;
+  fuzz_input_pointers(server->current_io_vec, &seed);
+  fuzz_registers(server->current_io_vec, &seed);
 
   SE_(free_msg)(new_alloc_msg);
   SE_(set_server_state)(server, SERVER_WAITING_TO_EXECUTE);
@@ -1116,6 +1137,7 @@ static Bool wait_for_child(SE_(cmd_server) * server) {
       //      SE_(msg_type_str)(cmd_msg->msg_type));
       if (server->using_fuzzed_io_vec && cmd_msg->msg_type == SEMSG_NEW_ALLOC) {
         should_fork = handle_new_alloc(server, cmd_msg);
+        //        should_fork = True;
         if (!should_fork) {
           report_error(server, "Could not handle tainted location");
         }
