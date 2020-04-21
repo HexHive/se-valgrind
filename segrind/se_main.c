@@ -205,6 +205,11 @@ static void extract_return(VexArch arch, SE_(return_value) * return_value,
                                   VKI_PROT_EXEC);
 }
 
+/**
+ * @brief Copies non-pointer data in allocated objects to the IOVec expected
+ * state
+ * @param io_vec
+ */
 static void copy_pointer_data(SE_(io_vec) * io_vec) {
   UWord addr_min, addr_max, val;
   UInt size = VG_(sizeRangeMap)(io_vec->initial_state.address_state);
@@ -245,7 +250,7 @@ static void SE_(send_fuzzed_io_vec)(void) {
 
   copy_pointer_data(SE_(command_server)->current_io_vec);
 
-  //    SE_(ppIOVec)(SE_(command_server)->current_io_vec);
+  //      SE_(ppIOVec)(SE_(command_server)->current_io_vec);
 
   tl_assert(SE_(write_io_vec_to_cmd_server)(SE_(command_server)->current_io_vec,
                                             False) > 0);
@@ -598,7 +603,7 @@ static void SE_(thread_creation)(ThreadId tid, ThreadId child) {
     target_name = VG_(strdup)(SE_TOOL_ALLOC_STR, fnname);
     tl_assert(VG_(strlen)(target_name) > 0);
     VG_(umsg)("Executing %s\n", target_name);
-    SE_(ppIOVec)(SE_(command_server)->current_io_vec);
+    //    SE_(ppIOVec)(SE_(command_server)->current_io_vec);
   }
 }
 
@@ -635,7 +640,7 @@ static void SE_(maybe_report_success_to_commader)(void) {
 
       //      VG_(umsg)("Checking for state equality\n");
       if (!SE_(current_state_matches_expected)(
-              SE_(command_server)->current_io_vec, &return_value)) {
+              SE_(command_server)->current_io_vec, &return_value, syscalls)) {
         SE_(report_failure_to_commander)();
       } else {
         SE_(write_msg_to_commander)(SEMSG_OK, 0, NULL);

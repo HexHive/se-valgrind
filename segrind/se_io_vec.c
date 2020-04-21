@@ -450,7 +450,8 @@ void SE_(ppProgramState)(SE_(program_state) * program_state) {
 }
 
 Bool SE_(current_state_matches_expected)(SE_(io_vec) * io_vec,
-                                         SE_(return_value) * return_value) {
+                                         SE_(return_value) * return_value,
+                                         OSet *syscalls) {
   tl_assert(io_vec);
   tl_assert(return_value);
 
@@ -460,13 +461,25 @@ Bool SE_(current_state_matches_expected)(SE_(io_vec) * io_vec,
 
   //  if (return_value->value.buf) {
   //    VG_(printf)
-  //        ("return_value: 0x%lx %s\n", *(RegWord *)return_value->value.buf,
-  //         return_value->is_ptr ? "O" : "X");
+  //    ("return_value: 0x%lx %s\n", *(RegWord *)return_value->value.buf,
+  //     return_value->is_ptr ? "O" : "X");
   //  } else {
   //    VG_(printf)("Return value is NULL\n");
   //  }
   if (!SE_(return_values_same)(expected_return, return_value)) {
     return False;
+  }
+
+  if (VG_(OSetWord_Size)(syscalls) !=
+      VG_(OSetWord_Size)(io_vec->system_calls)) {
+    return False;
+  }
+  VG_(OSetWord_ResetIter)(syscalls);
+  UWord syscall;
+  while (VG_(OSetWord_Next)(syscalls, &syscall)) {
+    if (!VG_(OSetWord_Contains)(io_vec->system_calls, syscall)) {
+      return False;
+    }
   }
 
   /* Check address state */
@@ -479,6 +492,10 @@ Bool SE_(current_state_matches_expected)(SE_(io_vec) * io_vec,
     if (val & OBJ_START_MAGIC) {
       in_obj = True;
     }
+    if (!(val & OBJ_ALLOCATED_MAGIC)) {
+      in_obj = False;
+    }
+
     if (in_obj && !(val & ALLOCATED_SUBPTR_MAGIC)) {
       UWord expected_min_addr, expected_max_addr, expected_val;
       for (UWord current_addr = addr_min; current_addr <= addr_max;
@@ -490,7 +507,7 @@ Bool SE_(current_state_matches_expected)(SE_(io_vec) * io_vec,
         //        ("Comparing %p (%02x) with 0x%02x\n", (void *)current_addr,
         //         *(UChar *)current_addr, (UChar)expected_val);
         if (VG_(memcmp)((void *)current_addr, &expected_val, 1) != 0) {
-          VG_(umsg)("6\n");
+          //          VG_(umsg)("6\n");
           return False;
         }
       }
@@ -506,13 +523,14 @@ Bool SE_(current_state_matches_expected)(SE_(io_vec) * io_vec,
         //        VG_(umsg)("7\n");
         return False;
       }
+      i += sizeof(Addr) - 1;
     }
     if (val & OBJ_END_MAGIC) {
       in_obj = False;
     }
   }
 
-  //  VG_(umsg)("8\n");
+  //  VG_(umsg)("IOVec accepted\n");
   return True;
 }
 

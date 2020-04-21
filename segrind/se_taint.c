@@ -247,14 +247,14 @@ void SE_(init_taint_analysis)(XArray *program_states, Addr faulting_addr) {
   taint_info.taint_source.location.addr = 0;
 
   taint_count = 0;
-  VG_(umsg)("Taint analysis beginning!\n");
+  //  VG_(umsg)("Taint analysis beginning!\n");
 }
 
 void SE_(end_taint_analysis)(void) {
   if (tainted_locations_) {
     VG_(OSetGen_Destroy)(tainted_locations_);
   }
-  VG_(umsg)("Taint analysis complete\n");
+  //  VG_(umsg)("Taint analysis complete\n");
 }
 
 IRExpr *SE_(get_IRExpr)(IRExpr *expr) {
@@ -355,9 +355,9 @@ void SE_(taint_IRExpr)(IRExpr *irExpr, Word idx) {
     //      VG_(printf)
     //      ("\tAt end, Reg %d = 0x%lx\n\tcurrent val = 0x%0lx\n", 24,
     //       *(Addr *)(tmp + 24), *(Addr *)(curr + 24));
-  }
+    //    }
 
-  /* The first tainted location is the faulting instruction,
+    /* The first tainted location is the faulting instruction,
      * the second tainted location is the load of the invalid address.
      */
     if (taint_count == 2 && taint_info.taint_source.type == taint_invalid &&

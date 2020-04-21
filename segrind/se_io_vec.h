@@ -49,10 +49,6 @@ typedef struct io_vec {
 
   SE_(return_value) return_value; /* The expected return value */
 
-  /* Maps which parts of the register states are pointers */
-  //  SE_(memoized_object) initial_register_state_map;
-  /* The location and value of pointers in the address space */
-
   OSet *system_calls; /* Unique set of system calls executed */
 } SE_(io_vec);
 
@@ -121,10 +117,12 @@ void SE_(ppProgramState)(SE_(program_state) * program_state);
  * @brief Returns true if the current program state matches the expected state
  * @param io_vec
  * @param return_value
+ * @param syscalls
  * @return
  */
 Bool SE_(current_state_matches_expected)(SE_(io_vec) * io_vec,
-                                         SE_(return_value) * return_value);
+                                         SE_(return_value) * return_value,
+                                         OSet *syscalls);
 
 /**
  * @brief Returns True if the two return values match our return value heuristic

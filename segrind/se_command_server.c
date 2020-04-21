@@ -321,11 +321,44 @@ static Bool handle_set_io_vec(SE_(cmd_server) * server,
   tl_assert(cmd_msg->length > 0);
   tl_assert(cmd_msg->data);
 
+  UInt size;
+  UWord obj_min_addr = 0, obj_max_addr = 0;
+
   if (!SE_(set_server_state)(server, SERVER_SETTING_CTX)) {
     return False;
   }
 
   if (server->current_io_vec) {
+    size =
+        VG_(sizeRangeMap)(server->current_io_vec->initial_state.address_state);
+    for (UInt i = 0; i < size; i++) {
+      UWord addr_min, addr_max, val;
+      VG_(indexRangeMap)
+      (&addr_min, &addr_max, &val,
+       server->current_io_vec->initial_state.address_state, i);
+      if (val & OBJ_START_MAGIC) {
+        obj_min_addr = addr_min;
+      } else if (val & OBJ_END_MAGIC) {
+        obj_max_addr = addr_max;
+
+        if (VG_(am_is_valid_for_client)(obj_min_addr,
+                                        obj_max_addr - obj_min_addr,
+                                        VKI_PROT_READ | VKI_PROT_WRITE)) {
+          Bool ignored;
+          SysRes res = VG_(am_munmap_client)(&ignored, obj_min_addr,
+                                             obj_max_addr - obj_min_addr);
+          if (sr_isError(res)) {
+            UInt temp = SE_(seed);
+            VG_(umsg)
+            ("Could not unmap %p. Filling with random bytes\n",
+             (void *)obj_min_addr);
+            for (UWord curr = obj_min_addr; curr != obj_max_addr; curr += 1) {
+              VG_(memset)((void *)curr, VG_(random)(&temp), 1);
+            }
+          }
+        }
+      }
+    }
     SE_(free_io_vec)(server->current_io_vec);
   }
   server->current_io_vec =
@@ -336,9 +369,7 @@ static Bool handle_set_io_vec(SE_(cmd_server) * server,
   //  VG_(umsg)("Seed = %u\n", seed);
 
   /* Establish valid memory state */
-  UInt size =
-      VG_(sizeRangeMap)(server->current_io_vec->initial_state.address_state);
-  UWord obj_min_addr = 0, obj_max_addr = 0;
+  size = VG_(sizeRangeMap)(server->current_io_vec->initial_state.address_state);
   for (UInt i = 0; i < size; i++) {
     UWord addr_min, addr_max, val;
     VG_(indexRangeMap)
@@ -349,24 +380,30 @@ static Bool handle_set_io_vec(SE_(cmd_server) * server,
     } else if (val & OBJ_END_MAGIC) {
       obj_max_addr = addr_max;
 
-      SysRes res = VG_(am_mmap_anon_fixed_client)(
-          obj_min_addr, obj_max_addr - obj_min_addr,
-          VKI_PROT_READ | VKI_PROT_WRITE);
-      if (sr_isError(res)) {
-        VG_(umsg)
-        ("Could not allocate %lu bytes at %p!\n", obj_max_addr - obj_min_addr,
-         (void *)obj_min_addr);
-        return False;
+      if (!VG_(am_is_valid_for_client)(obj_min_addr,
+                                       obj_max_addr - obj_min_addr,
+                                       VKI_PROT_READ | VKI_PROT_WRITE)) {
+        SysRes res = VG_(am_mmap_anon_fixed_client)(
+            VG_PGROUNDDN(obj_min_addr), VKI_PAGE_SIZE,
+            VKI_PROT_READ | VKI_PROT_WRITE);
+        if (sr_isError(res)) {
+          VG_(umsg)
+          ("Could not allocate %lu bytes at %p!\n", obj_max_addr - obj_min_addr,
+           (void *)obj_min_addr);
+          return False;
+        }
       }
     }
   }
 
-  /* Set initial memory values based on the random seed provided by the IOVec */
+  /* Set initial memory values based on the random seed provided by the IOVec
+   */
   fuzz_input_pointers(server->current_io_vec, &seed);
   /* No need to fuzz registers, since the ''fuzzed`` registers come in with
    * the initial state */
 
-  //  SE_(ppIOVec)(server->current_io_vec);
+  //  VG_(umsg)("Context set\n");
+  //    SE_(ppIOVec)(server->current_io_vec);
 
   server->using_existing_io_vec = True;
   server->using_fuzzed_io_vec = False;
@@ -477,7 +514,8 @@ static Addr allocate_new_object(SE_(cmd_server) * server, SizeT size,
   } else {
     if (!VG_(am_is_valid_for_client_or_free_or_resvn)(
             location, size, VKI_PROT_READ | VKI_PROT_WRITE)) {
-      VG_(umsg)("%p cannot ever be a valid client address\n", (void *)location);
+      VG_(umsg)
+      ("%p cannot ever be a valid client address\n", (void *)location);
       return 0;
     }
     new_alloc_loc = location;
@@ -525,7 +563,8 @@ static Bool reallocate_obj(SE_(cmd_server) * server, SizeT new_size,
   tl_assert(obj_start < obj_end);
 
   SizeT current_size = obj_end - obj_start + 1;
-  //  VG_(umsg)("current_size = %lu\tnew_size = %lu\n", current_size, new_size);
+  //  VG_(umsg)("current_size = %lu\tnew_size = %lu\n", current_size,
+  //  new_size);
   if (new_size <= current_size) {
     *new_start = obj_start;
     *new_end = obj_end;
@@ -568,7 +607,8 @@ static Bool reallocate_obj(SE_(cmd_server) * server, SizeT new_size,
        obj_start + i);
       tl_assert(tmp_val > 0);
       //      VG_(umsg)
-      //      ("Copying pointer byte from %p to %p\n", (void *)(obj_start + i),
+      //      ("Copying pointer byte from %p to %p\n", (void *)(obj_start +
+      //      i),
       //       (void *)(new_addr + i));
       VG_(memcpy)
       ((void *)(new_addr + i), (void *)(obj_start + i), sizeof(Char));
@@ -600,7 +640,8 @@ static Bool reallocate_obj(SE_(cmd_server) * server, SizeT new_size,
      server->current_io_vec->initial_state.pointer_member_locations, i);
     //    if (val > 0) {
     //      VG_(umsg)
-    //      ("[ %p -- %p ] = 0x%lx\n", (void *)min_addr, (void *)max_addr, val);
+    //      ("[ %p -- %p ] = 0x%lx\n", (void *)min_addr, (void *)max_addr,
+    //      val);
     //    }
     if (val == obj_start) {
       VG_(bindRangeMap)
@@ -628,8 +669,8 @@ static Bool reallocate_obj(SE_(cmd_server) * server, SizeT new_size,
 }
 
 /**
- * @brief Writes ptr_val to the offset, and registers the region covered by the
- * pointer as containing a pointer
+ * @brief Writes ptr_val to the offset, and registers the region covered by
+ * the pointer as containing a pointer
  * @param server
  * @param obj_start
  * @param obj_end
@@ -658,7 +699,8 @@ static void set_pointer_submember(SE_(cmd_server) * server, Addr obj_start,
 
     val |= ALLOCATED_SUBPTR_MAGIC;
 
-    //    VG_(umsg)("Registering %p = %lu\n", (void *)(pointer_start + i), val);
+    //    VG_(umsg)("Registering %p = %lu\n", (void *)(pointer_start + i),
+    //    val);
     VG_(bindRangeMap)
     (server->current_io_vec->initial_state.address_state, pointer_start + i,
      pointer_start + i, val);
@@ -840,7 +882,8 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
   (&taint_info, (UChar *)new_alloc_msg->data + bytes_read, sizeof(taint_info));
   bytes_read += sizeof(taint_info);
 
-  VG_(memcpy)(&count, (UChar *)new_alloc_msg->data + bytes_read, sizeof(Word));
+  VG_(memcpy)
+  (&count, (UChar *)new_alloc_msg->data + bytes_read, sizeof(Word));
   bytes_read += sizeof(Word);
   for (i = 0; i < count; i++) {
     VG_(memcpy)
@@ -848,7 +891,8 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
      sizeof(tainted_loc));
     bytes_read += sizeof(tainted_loc);
 
-    //    if (tainted_loc.type == taint_addr || tainted_loc.type == taint_stack)
+    //    if (tainted_loc.type == taint_addr || tainted_loc.type ==
+    //    taint_stack)
     //    {
     //      VG_(umsg)
     //      ("Received tainted %s %p\n",
@@ -865,7 +909,8 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
     //      *)taint_info.taint_source.location.addr);
     //    } else if (tainted_loc.type == taint_reg) {
     //      VG_(umsg)("Received tainted register %d\n",
-    //      tainted_loc.location.offset); VG_(umsg)("Invalid addr: %p\n", (void
+    //      tainted_loc.location.offset); VG_(umsg)("Invalid addr: %p\n",
+    //      (void
     //      *)taint_info.faulting_address);
     //    } else {
     //      VG_(umsg)("Received invalid taint\n");
@@ -980,7 +1025,8 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
           ("Failed to extend stack to %p\n", (void *)tainted_loc.location.addr);
           return False;
         }
-        /* We just needed to adjust the stack, so this attempt doesn't count */
+        /* We just needed to adjust the stack, so this attempt doesn't count
+         */
         server->attempt_count--;
         server->min_stack_ptr = tainted_loc.location.addr;
         break;
@@ -1039,7 +1085,8 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
         if (!reallocate_obj(server, new_size, obj_start, obj_end, &new_start,
                             &new_end, offset)) {
           VG_(umsg)
-          ("Could not reallocate object at %p to accomodate new size of %lu\n",
+          ("Could not reallocate object at %p to accomodate new size of "
+           "%lu\n",
            (void *)obj_start, new_size);
           return False;
         }
@@ -1056,7 +1103,8 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
 
         set_pointer_submember(server, new_start, new_end, offset, sub_pointer);
         //        VG_(umsg)
-        //        ("Subpointer at %p = 0x%0lx\n", (void *)(new_start + offset),
+        //        ("Subpointer at %p = 0x%0lx\n", (void *)(new_start +
+        //        offset),
         //         *(Addr *)(new_start + offset));
       }
       break;
@@ -1229,9 +1277,6 @@ static Bool SE_(fork_and_execute)(SE_(cmd_server) * server) {
   while (server->attempt_count <= SE_(MaxAttempts)) {
     if (server->current_state != SERVER_GETTING_INIT_STATE)
       if (!SE_(set_server_state)(server, SERVER_EXECUTING)) {
-        VG_(umsg)
-        ("Invalid server transition: %s -> SERVER_EXECUTING\n",
-         SE_(server_state_str)(server->current_state));
         report_error(server, "Invalid server state");
         goto exit;
       }
@@ -1299,7 +1344,8 @@ void SE_(start_server)(SE_(cmd_server) * server, ThreadId executor_tid) {
     VG_(umsg)("Found main at 0x%lx\n", symAvma.main);
     if (SE_(user_main) > 0 && SE_(user_main) != symAvma.main) {
       VG_(umsg)
-      ("WARNING: User specified main (0x%lx) is different from Valgrind found "
+      ("WARNING: User specified main (0x%lx) is different from Valgrind "
+       "found "
        "main (0x%lx)! Using user specified main...",
        SE_(user_main), symAvma.main);
       server->main_addr = SE_(user_main);
@@ -1377,7 +1423,7 @@ Bool SE_(is_valid_transition)(const SE_(cmd_server) * server,
             next_state == SERVER_EXECUTING);
   case SERVER_EXECUTING:
     return (next_state == SERVER_WAIT_FOR_CMD ||
-            next_state == SERVER_REPORT_ERROR);
+            next_state == SERVER_REPORT_ERROR || next_state == SERVER_FUZZING);
   case SERVER_REPORT_ERROR:
     return (next_state == SERVER_WAIT_FOR_CMD);
   case SERVER_INVALID:
