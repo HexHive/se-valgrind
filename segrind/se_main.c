@@ -536,10 +536,11 @@ static void fix_address_space(Addr invalid_addr) {
  */
 static void SE_(signal_handler)(Int sigNo, Addr addr) {
   if (client_running && target_called) {
-    VG_(umsg)
-    ("Signal handler called with signal %s and addr = %p with %ld program "
-     "states\n",
-     VG_(signame)(sigNo), (void *)addr, VG_(sizeXA)(program_states));
+    //    VG_(umsg)
+    //    ("Signal handler called with signal %s and addr = %p with %ld program
+    //    "
+    //     "states\n",
+    //     VG_(signame)(sigNo), (void *)addr, VG_(sizeXA)(program_states));
     if (sigNo == VKI_SIGSEGV && SE_(command_server)->using_fuzzed_io_vec) {
       fix_address_space(addr);
     } else {
@@ -597,7 +598,7 @@ static void SE_(thread_creation)(ThreadId tid, ThreadId child) {
     target_name = VG_(strdup)(SE_TOOL_ALLOC_STR, fnname);
     tl_assert(VG_(strlen)(target_name) > 0);
     VG_(umsg)("Executing %s\n", target_name);
-    //    SE_(ppIOVec)(SE_(command_server)->current_io_vec);
+    SE_(ppIOVec)(SE_(command_server)->current_io_vec);
   }
 }
 
@@ -615,6 +616,7 @@ static void SE_(maybe_report_success_to_commader)(void) {
 
   if (SE_(command_server)->current_state != SERVER_GETTING_INIT_STATE) {
     if (SE_(command_server)->using_fuzzed_io_vec) {
+      //      VG_(umsg)("!!!!!! Successfully generated IOVec !!!!!!!!!\n");
       SE_(send_fuzzed_io_vec)();
     } else if (SE_(command_server)->using_existing_io_vec) {
       VexGuestArchState last_state;
@@ -631,7 +633,7 @@ static void SE_(maybe_report_success_to_commader)(void) {
 
       extract_return(host_arch, &return_value, &last_state);
 
-      VG_(umsg)("Checking for state equality\n");
+      //      VG_(umsg)("Checking for state equality\n");
       if (!SE_(current_state_matches_expected)(
               SE_(command_server)->current_io_vec, &return_value)) {
         SE_(report_failure_to_commander)();
@@ -687,12 +689,13 @@ static void record_current_state(Addr addr) {
     VG_(get_shadow_regs_area)
     (target_id, (UChar *)&current_state, 0, 0, sizeof(current_state));
 
-    const HChar *fnname;
-    VG_(get_fnname)
-    (VG_(current_DiEpoch)(), current_state.VG_INSTR_PTR, &fnname);
-    VG_(umsg)
-    ("Recording state for %p/%p (%s)\n", (void *)current_state.VG_INSTR_PTR,
-     (void *)addr, fnname);
+    //    const HChar *fnname;
+    //    VG_(get_fnname)
+    //    (VG_(current_DiEpoch)(), current_state.VG_INSTR_PTR, &fnname);
+    //    VG_(umsg)
+    //    ("Recording state for %p/%p (%s)\n", (void
+    //    *)current_state.VG_INSTR_PTR,
+    //     (void *)addr, fnname);
     //        VG_(printf)("RBP = %p\n", (void*)current_state.VG_FRAME_PTR);
 
     current_state.VG_INSTR_PTR = addr;

@@ -848,21 +848,28 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
      sizeof(tainted_loc));
     bytes_read += sizeof(tainted_loc);
 
-    if (tainted_loc.type == taint_addr || tainted_loc.type == taint_stack) {
-      VG_(umsg)
-      ("Received tainted %s %p\n",
-       tainted_loc.type == taint_stack ? "stack address" : "address",
-       (void *)tainted_loc.location.addr);
-      AddrInfo a;
-      VG_(describe_addr)(VG_(current_DiEpoch)(), tainted_loc.location.addr, &a);
-      VG_(pp_addrinfo)(tainted_loc.location.addr, &a);
-      VG_(clear_addrinfo)(&a);
-    } else if (tainted_loc.type == taint_reg) {
-      VG_(umsg)("Received tainted register %d\n", tainted_loc.location.offset);
-      VG_(umsg)("Invalid addr: %p\n", (void *)taint_info.faulting_address);
-    } else {
-      VG_(umsg)("Received invalid taint\n");
-    }
+    //    if (tainted_loc.type == taint_addr || tainted_loc.type == taint_stack)
+    //    {
+    //      VG_(umsg)
+    //      ("Received tainted %s %p\n",
+    //       tainted_loc.type == taint_stack ? "stack address" : "address",
+    //       (void *)tainted_loc.location.addr);
+    //      AddrInfo a;
+    //      VG_(describe_addr)(VG_(current_DiEpoch)(),
+    //      tainted_loc.location.addr, &a);
+    //      VG_(pp_addrinfo)(tainted_loc.location.addr, &a);
+    //      VG_(clear_addrinfo)(&a);
+    //      VG_(umsg)("Faulting address = %p\n", (void
+    //      *)taint_info.faulting_address); VG_(umsg)
+    //      ("Faulting source = %p\n", (void
+    //      *)taint_info.taint_source.location.addr);
+    //    } else if (tainted_loc.type == taint_reg) {
+    //      VG_(umsg)("Received tainted register %d\n",
+    //      tainted_loc.location.offset); VG_(umsg)("Invalid addr: %p\n", (void
+    //      *)taint_info.faulting_address);
+    //    } else {
+    //      VG_(umsg)("Received invalid taint\n");
+    //    }
 
     switch (tainted_loc.type) {
     case taint_reg:
@@ -903,15 +910,16 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
         if (!object_nearby(server, taint_info.faulting_address, &obj_start,
                            &obj_end)) {
           /* The address is waaaay invalid, so just fuzz again */
-          VG_(umsg)
-          ("Faulting address %p way off\n",
-           (void *)taint_info.faulting_address);
+          //          VG_(umsg)
+          //          ("Faulting address %p way off\n",
+          //           (void *)taint_info.faulting_address);
           return False;
         }
 
-        VG_(umsg)
-        ("Object near %p found at %p\n", (void *)taint_info.faulting_address,
-         (void *)obj_start);
+        //        VG_(umsg)
+        //        ("Object near %p found at %p\n", (void
+        //        *)taint_info.faulting_address,
+        //         (void *)obj_start);
 
         if (!lookup_obj(server, (Addr)reg_val->value, &obj_start, &obj_end)) {
           VG_(umsg)
@@ -983,24 +991,25 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
       if (!tainted_loc.location.addr) {
         return False;
       }
-      if (!object_nearby(server, taint_info.faulting_address, &obj_start,
-                         &obj_end)) {
-        if (!VG_(am_is_valid_for_client)(taint_info.faulting_address,
+      if (!object_nearby(server, taint_info.taint_source.location.addr,
+                         &obj_start, &obj_end)) {
+        if (!VG_(am_is_valid_for_client)(taint_info.taint_source.location.addr,
                                          SE_DEFAULT_ALLOC_SPACE,
                                          VKI_PROT_READ | VKI_PROT_WRITE)) {
           SysRes res = VG_(am_mmap_anon_fixed_client)(
-              VG_PGROUNDDN(taint_info.faulting_address), VKI_PAGE_SIZE,
-              VKI_PROT_READ | VKI_PROT_WRITE);
+              VG_PGROUNDDN(taint_info.taint_source.location.addr),
+              VKI_PAGE_SIZE, VKI_PROT_READ | VKI_PROT_WRITE);
           if (sr_isError(res)) {
             VG_(umsg)
             ("Failed to memory map location %p: %lu\n",
-             (void *)VG_PGROUNDDN((void *)taint_info.faulting_address),
+             (void *)VG_PGROUNDDN(
+                 (void *)taint_info.taint_source.location.addr),
              sr_Err(res));
             return False;
           }
         }
         obj_loc = allocate_new_object(server, SE_DEFAULT_ALLOC_SPACE,
-                                      taint_info.faulting_address);
+                                      taint_info.taint_source.location.addr);
         if (!obj_loc) {
           VG_(umsg)("Failed to allocate object\n");
           return False;
@@ -1024,8 +1033,8 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
         //        VG_(umsg)
         //        ("Existing object found at [ %p -- %p ] at or near %p. "
         //         "Reallocating to hold %lu bytes.\n",
-        //         (void *)obj_start, (void *)obj_end, (void
-        //         *)invalid_addr.location.addr, new_size);
+        //         (void *)obj_start, (void *)obj_end,
+        //         (void *)taint_info.taint_source.location.addr, new_size);
         Addr new_start, new_end;
         if (!reallocate_obj(server, new_size, obj_start, obj_end, &new_start,
                             &new_end, offset)) {
