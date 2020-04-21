@@ -695,7 +695,10 @@ static void set_pointer_submember(SE_(cmd_server) * server, Addr obj_start,
     (&min_addr, &max_addr, &val,
      server->current_io_vec->initial_state.address_state, pointer_start + i);
 
-    tl_assert(val & OBJ_ALLOCATED_MAGIC);
+    tl_assert2(
+        val & OBJ_ALLOCATED_MAGIC,
+        "[ %p -- %p ] = %p, while [ %p -- %p ] expected to be allocated\n",
+        min_addr, max_addr, val, obj_start, obj_end);
 
     val |= ALLOCATED_SUBPTR_MAGIC;
 
