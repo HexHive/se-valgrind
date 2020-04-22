@@ -138,4 +138,8 @@ Bool SE_(msg_can_be_handled)(const SE_(cmd_server) * server,
  */
 const HChar *SE_(server_state_str)(SE_(cmd_server_state) state);
 
+Bool SE_(remove_global_memory_permissions)(SE_(cmd_server) * server);
+
+Bool SE_(establish_memory_state)(SE_(cmd_server) * server);
+
 #endif // SE_VALGRIND_SE_COMMAND_SERVER_H

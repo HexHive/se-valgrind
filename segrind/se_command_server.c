@@ -293,8 +293,8 @@ static Bool fuzz_program_state(SE_(cmd_server) * server) {
   server->using_fuzzed_io_vec = True;
   server->using_existing_io_vec = False;
 
-  fuzz_input_pointers(server->current_io_vec, &SE_(seed));
-  fuzz_registers(server->current_io_vec, &SE_(seed));
+  //  fuzz_input_pointers(server->current_io_vec, &SE_(seed));
+  //  fuzz_registers(server->current_io_vec, &SE_(seed));
 
   //  VG_(memcpy)
   //  (&server->current_io_vec->initial_state.register_state.buf[VG_O_FRAME_PTR],
@@ -304,6 +304,48 @@ static Bool fuzz_program_state(SE_(cmd_server) * server) {
   //   &server->initial_stack_ptr, sizeof(server->initial_stack_ptr));
 
   return SE_(set_server_state)(server, SERVER_WAITING_TO_EXECUTE);
+}
+
+Bool SE_(establish_memory_state)(SE_(cmd_server) * server) {
+  UInt size;
+  UWord obj_min_addr = 0, obj_max_addr = 0;
+
+  VG_(umsg)("Establishing memory state\n");
+  size = VG_(sizeRangeMap)(server->current_io_vec->initial_state.address_state);
+  for (UInt i = 0; i < size; i++) {
+    UWord addr_min, addr_max, val;
+    VG_(indexRangeMap)
+    (&addr_min, &addr_max, &val,
+     server->current_io_vec->initial_state.address_state, i);
+    if (val & OBJ_START_MAGIC) {
+      obj_min_addr = addr_min;
+    } else if (val & OBJ_END_MAGIC) {
+      obj_max_addr = addr_max;
+
+      if (!VG_(am_is_valid_for_client)(obj_min_addr,
+                                       obj_max_addr - obj_min_addr,
+                                       VKI_PROT_READ | VKI_PROT_WRITE)) {
+        VG_(umsg)
+        ("Mapping %p into client space\n", (void *)VG_PGROUNDDN(obj_min_addr));
+        SysRes res = VG_(am_mmap_anon_fixed_client)(
+            VG_PGROUNDDN(obj_min_addr), VKI_PAGE_SIZE,
+            VKI_PROT_READ | VKI_PROT_WRITE);
+        if (sr_isError(res)) {
+          VG_(umsg)
+          ("Could not allocate %lu bytes at %p!\n", obj_max_addr - obj_min_addr,
+           (void *)obj_min_addr);
+          return False;
+        }
+      }
+    }
+  }
+
+  UInt seed = server->current_io_vec->random_seed;
+  fuzz_input_pointers(server->current_io_vec, &seed);
+  if (server->using_fuzzed_io_vec) {
+    fuzz_registers(server->current_io_vec, &seed);
+  }
+  return True;
 }
 
 /**
@@ -365,40 +407,12 @@ static Bool handle_set_io_vec(SE_(cmd_server) * server,
       SE_(read_io_vec_from_buf)(cmd_msg->length, (UChar *)cmd_msg->data);
 
   //  SE_(ppIOVec)(server->current_io_vec);
-  UInt seed = server->current_io_vec->random_seed;
+  //  UInt seed = server->current_io_vec->random_seed;
   //  VG_(umsg)("Seed = %u\n", seed);
-
-  /* Establish valid memory state */
-  size = VG_(sizeRangeMap)(server->current_io_vec->initial_state.address_state);
-  for (UInt i = 0; i < size; i++) {
-    UWord addr_min, addr_max, val;
-    VG_(indexRangeMap)
-    (&addr_min, &addr_max, &val,
-     server->current_io_vec->initial_state.address_state, i);
-    if (val & OBJ_START_MAGIC) {
-      obj_min_addr = addr_min;
-    } else if (val & OBJ_END_MAGIC) {
-      obj_max_addr = addr_max;
-
-      if (!VG_(am_is_valid_for_client)(obj_min_addr,
-                                       obj_max_addr - obj_min_addr,
-                                       VKI_PROT_READ | VKI_PROT_WRITE)) {
-        SysRes res = VG_(am_mmap_anon_fixed_client)(
-            VG_PGROUNDDN(obj_min_addr), VKI_PAGE_SIZE,
-            VKI_PROT_READ | VKI_PROT_WRITE);
-        if (sr_isError(res)) {
-          VG_(umsg)
-          ("Could not allocate %lu bytes at %p!\n", obj_max_addr - obj_min_addr,
-           (void *)obj_min_addr);
-          return False;
-        }
-      }
-    }
-  }
 
   /* Set initial memory values based on the random seed provided by the IOVec
    */
-  fuzz_input_pointers(server->current_io_vec, &seed);
+  //  fuzz_input_pointers(server->current_io_vec, &seed);
   /* No need to fuzz registers, since the ''fuzzed`` registers come in with
    * the initial state */
 
@@ -894,30 +908,24 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
      sizeof(tainted_loc));
     bytes_read += sizeof(tainted_loc);
 
-    //    if (tainted_loc.type == taint_addr || tainted_loc.type ==
-    //    taint_stack)
-    //    {
-    //      VG_(umsg)
-    //      ("Received tainted %s %p\n",
-    //       tainted_loc.type == taint_stack ? "stack address" : "address",
-    //       (void *)tainted_loc.location.addr);
-    //      AddrInfo a;
-    //      VG_(describe_addr)(VG_(current_DiEpoch)(),
-    //      tainted_loc.location.addr, &a);
-    //      VG_(pp_addrinfo)(tainted_loc.location.addr, &a);
-    //      VG_(clear_addrinfo)(&a);
-    //      VG_(umsg)("Faulting address = %p\n", (void
-    //      *)taint_info.faulting_address); VG_(umsg)
-    //      ("Faulting source = %p\n", (void
-    //      *)taint_info.taint_source.location.addr);
-    //    } else if (tainted_loc.type == taint_reg) {
-    //      VG_(umsg)("Received tainted register %d\n",
-    //      tainted_loc.location.offset); VG_(umsg)("Invalid addr: %p\n",
-    //      (void
-    //      *)taint_info.faulting_address);
-    //    } else {
-    //      VG_(umsg)("Received invalid taint\n");
-    //    }
+    if (tainted_loc.type == taint_addr || tainted_loc.type == taint_stack) {
+      VG_(umsg)
+      ("Received tainted %s %p\n",
+       tainted_loc.type == taint_stack ? "stack address" : "address",
+       (void *)tainted_loc.location.addr);
+      AddrInfo a;
+      VG_(describe_addr)(VG_(current_DiEpoch)(), tainted_loc.location.addr, &a);
+      VG_(pp_addrinfo)(tainted_loc.location.addr, &a);
+      VG_(clear_addrinfo)(&a);
+      VG_(umsg)("Faulting address = %p\n", (void *)taint_info.faulting_address);
+      VG_(umsg)
+      ("Faulting source = %p\n", (void *)taint_info.taint_source.location.addr);
+    } else if (tainted_loc.type == taint_reg) {
+      VG_(umsg)("Received tainted register %d\n", tainted_loc.location.offset);
+      VG_(umsg)("Invalid addr: %p\n", (void *)taint_info.faulting_address);
+    } else {
+      VG_(umsg)("Received invalid taint\n");
+    }
 
     switch (tainted_loc.type) {
     case taint_reg:
@@ -958,16 +966,15 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
         if (!object_nearby(server, taint_info.faulting_address, &obj_start,
                            &obj_end)) {
           /* The address is waaaay invalid, so just fuzz again */
-          //          VG_(umsg)
-          //          ("Faulting address %p way off\n",
-          //           (void *)taint_info.faulting_address);
+          VG_(umsg)
+          ("Faulting address %p way off\n",
+           (void *)taint_info.faulting_address);
           return False;
         }
 
-        //        VG_(umsg)
-        //        ("Object near %p found at %p\n", (void
-        //        *)taint_info.faulting_address,
-        //         (void *)obj_start);
+        VG_(umsg)
+        ("Object near %p found at %p\n", (void *)taint_info.faulting_address,
+         (void *)obj_start);
 
         if (!lookup_obj(server, (Addr)reg_val->value, &obj_start, &obj_end)) {
           VG_(umsg)
@@ -1009,9 +1016,9 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
           VG_(umsg)("Failed to allocate new object\n");
           return False;
         }
-        //        VG_(umsg)
-        //        ("Setting register %d to %p\n", tainted_loc.location.offset,
-        //         (void *)(obj_loc));
+        VG_(umsg)
+        ("Setting register %d to %p\n", tainted_loc.location.offset,
+         (void *)(obj_loc));
         reg_val->is_ptr = True;
         reg_val->value = obj_loc;
       }
@@ -1040,32 +1047,32 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
       if (!tainted_loc.location.addr) {
         return False;
       }
-      if (!object_nearby(server, taint_info.taint_source.location.addr,
-                         &obj_start, &obj_end)) {
-        if (!VG_(am_is_valid_for_client)(taint_info.taint_source.location.addr,
-                                         SE_DEFAULT_ALLOC_SPACE,
+      obj_loc = taint_info.taint_source.location.addr;
+      if (!obj_loc) {
+        /* This is a global variable with no source */
+        obj_loc = tainted_loc.location.addr;
+      }
+      if (!object_nearby(server, obj_loc, &obj_start, &obj_end)) {
+        if (!VG_(am_is_valid_for_client)(obj_loc, SE_DEFAULT_ALLOC_SPACE,
                                          VKI_PROT_READ | VKI_PROT_WRITE)) {
           SysRes res = VG_(am_mmap_anon_fixed_client)(
-              VG_PGROUNDDN(taint_info.taint_source.location.addr),
-              VKI_PAGE_SIZE, VKI_PROT_READ | VKI_PROT_WRITE);
+              VG_PGROUNDDN(obj_loc), VKI_PAGE_SIZE,
+              VKI_PROT_READ | VKI_PROT_WRITE);
           if (sr_isError(res)) {
             VG_(umsg)
-            ("Failed to memory map location %p: %lu\n",
-             (void *)VG_PGROUNDDN(
-                 (void *)taint_info.taint_source.location.addr),
+            ("Failed to memory map location %p for faulting %p: %lu\n",
+             (void *)VG_PGROUNDDN((void *)obj_loc), (void *)obj_loc,
              sr_Err(res));
             return False;
           }
         }
-        obj_loc = allocate_new_object(server, SE_DEFAULT_ALLOC_SPACE,
-                                      taint_info.taint_source.location.addr);
+        obj_loc = allocate_new_object(server, SE_DEFAULT_ALLOC_SPACE, obj_loc);
         if (!obj_loc) {
           VG_(umsg)("Failed to allocate object\n");
           return False;
         }
-        //        VG_(umsg)
-        //        ("Registered %p as an object\n", (void
-        //        *)tainted_loc.location.addr);
+        VG_(umsg)
+        ("Registered %p as an object\n", (void *)tainted_loc.location.addr);
       } else {
         PtrdiffT offset = taint_info.taint_source.location.addr - obj_start;
         SizeT orig_size = obj_end - obj_start + 1;
@@ -1079,11 +1086,11 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
           new_size = obj_end - taint_info.taint_source.location.addr + 1;
         }
 
-        //        VG_(umsg)
-        //        ("Existing object found at [ %p -- %p ] at or near %p. "
-        //         "Reallocating to hold %lu bytes.\n",
-        //         (void *)obj_start, (void *)obj_end,
-        //         (void *)taint_info.taint_source.location.addr, new_size);
+        VG_(umsg)
+        ("Existing object found at [ %p -- %p ] at or near %p. "
+         "Reallocating to hold %lu bytes.\n",
+         (void *)obj_start, (void *)obj_end,
+         (void *)taint_info.taint_source.location.addr, new_size);
         Addr new_start, new_end;
         if (!reallocate_obj(server, new_size, obj_start, obj_end, &new_start,
                             &new_end, offset)) {
@@ -1105,10 +1112,9 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
         }
 
         set_pointer_submember(server, new_start, new_end, offset, sub_pointer);
-        //        VG_(umsg)
-        //        ("Subpointer at %p = 0x%0lx\n", (void *)(new_start +
-        //        offset),
-        //         *(Addr *)(new_start + offset));
+        VG_(umsg)
+        ("Subpointer at %p = 0x%0lx\n", (void *)(new_start + offset),
+         *(Addr *)(new_start + offset));
       }
       break;
     default:
@@ -1149,6 +1155,59 @@ static void handle_coverage(SE_(cmd_server) * server) {
   }
 
   VG_(OSetWord_Destroy)(coverage);
+}
+
+Bool SE_(remove_global_memory_permissions)(SE_(cmd_server) * server) {
+  Int entries_needed;
+  Addr *entries = NULL;
+  Bool result = True;
+  Addr start;
+
+  entries_needed = VG_(am_get_segment_starts)(SkAnonC | SkFileC, &start, 1);
+  if (entries_needed < 0) {
+    /* See pub_tool_aspacemgr for why I'm doing this */
+    entries_needed *= -1;
+    entries = VG_(malloc)(SE_TOOL_ALLOC_STR, sizeof(Addr) * entries_needed);
+    entries_needed =
+        VG_(am_get_segment_starts)(SkAnonC | SkFileC, entries, entries_needed);
+    if (entries_needed < 0) {
+      VG_(umsg)("Unexpected entries needed: %d\n", entries_needed);
+      result = False;
+      goto exit;
+    }
+    for (Int i = 0; i < entries_needed; i++) {
+      start = entries[i];
+      //      VG_(umsg)("Getting segment for %p\n", (void *)start);
+      NSegment const *segment = VG_(am_find_nsegment)(start);
+      if (segment) {
+        //        AddrInfo ai;
+        //        VG_(describe_addr)(VG_(current_DiEpoch)(), segment->start,
+        //        &ai); VG_(pp_addrinfo)(segment->start, &ai);
+        //        VG_(clear_addrinfo)(&ai);
+        if (segment->hasW && !segment->isCH && !segment->hasX &&
+            !VG_(am_addr_is_in_extensible_client_stack)(segment->start)) {
+          //          VG_(umsg)
+          //          ("Removing permissions for [ %p --- %p ]\n", (void
+          //          *)segment->start,
+          //           (void *)segment->end);
+          SysRes res = VG_(am_mmap_anon_fixed_client)(
+              segment->start, segment->end - segment->start, VKI_PROT_NONE);
+          if (sr_Err(res)) {
+            VG_(umsg)("Failed to set permissions\n");
+            result = False;
+            goto exit;
+          }
+        }
+      }
+    }
+  }
+
+exit:
+  if (entries) {
+    VG_(free)(entries);
+  }
+  VG_(umsg)("Finished removing global permissions\n");
+  return result;
 }
 
 /**

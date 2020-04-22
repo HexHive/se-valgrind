@@ -541,11 +541,10 @@ static void fix_address_space(Addr invalid_addr) {
  */
 static void SE_(signal_handler)(Int sigNo, Addr addr) {
   if (client_running && target_called) {
-    //    VG_(umsg)
-    //    ("Signal handler called with signal %s and addr = %p with %ld program
-    //    "
-    //     "states\n",
-    //     VG_(signame)(sigNo), (void *)addr, VG_(sizeXA)(program_states));
+    VG_(umsg)
+    ("Signal handler called with signal %s and addr = %p with %ld program"
+     "states\n",
+     VG_(signame)(sigNo), (void *)addr, VG_(sizeXA)(program_states));
     if (sigNo == VKI_SIGSEGV && SE_(command_server)->using_fuzzed_io_vec) {
       fix_address_space(addr);
     } else {
@@ -603,7 +602,7 @@ static void SE_(thread_creation)(ThreadId tid, ThreadId child) {
     target_name = VG_(strdup)(SE_TOOL_ALLOC_STR, fnname);
     tl_assert(VG_(strlen)(target_name) > 0);
     VG_(umsg)("Executing %s\n", target_name);
-    //    SE_(ppIOVec)(SE_(command_server)->current_io_vec);
+    SE_(ppIOVec)(SE_(command_server)->current_io_vec);
   }
 }
 
@@ -694,14 +693,12 @@ static void record_current_state(Addr addr) {
     VG_(get_shadow_regs_area)
     (target_id, (UChar *)&current_state, 0, 0, sizeof(current_state));
 
-    //    const HChar *fnname;
-    //    VG_(get_fnname)
-    //    (VG_(current_DiEpoch)(), current_state.VG_INSTR_PTR, &fnname);
-    //    VG_(umsg)
-    //    ("Recording state for %p/%p (%s)\n", (void
-    //    *)current_state.VG_INSTR_PTR,
-    //     (void *)addr, fnname);
-    //        VG_(printf)("RBP = %p\n", (void*)current_state.VG_FRAME_PTR);
+    const HChar *fnname;
+    VG_(get_fnname)
+    (VG_(current_DiEpoch)(), current_state.VG_INSTR_PTR, &fnname);
+    VG_(umsg)
+    ("Recording state for %p/%p (%s)\n", (void *)current_state.VG_INSTR_PTR,
+     (void *)addr, fnname);
 
     current_state.VG_INSTR_PTR = addr;
 
@@ -750,6 +747,13 @@ static void jump_to_target_function(void) {
     (target_id, 0, reg_val->guest_state_offset, sizeof(reg_val->value),
      (UChar *)&reg_val->value);
   }
+
+  if (!SE_(remove_global_memory_permissions)(SE_(command_server)) ||
+      !SE_(establish_memory_state)(SE_(command_server))) {
+    SE_(report_failure_to_commander)();
+  }
+  VG_(umsg)("Done setting state\n");
+
   target_called = True;
   record_current_state(SE_(command_server)->target_func_addr);
 }
@@ -1020,7 +1024,7 @@ static IRSB *SE_(instrument)(VgCallbackClosure *closure, IRSB *bb,
   //  VG_(umsg)("Instrumenting code\n");
   if (client_running && main_replaced) {
     bbOut = SE_(instrument_target)(bb, gWordTy);
-    //            ppIRSB(bbOut);
+    //                ppIRSB(bbOut);
   } else if (client_running && !main_replaced && !target_called) {
     bbOut = SE_(replace_main_reference)(bb);
   }
