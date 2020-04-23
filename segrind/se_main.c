@@ -261,7 +261,7 @@ static void SE_(send_fuzzed_io_vec)(void) {
  * releases any held locks, then calls VG_(exit)(0)
  */
 static void SE_(cleanup_and_exit)(void) {
-  VG_(umsg)("Cleaning up before exiting\n");
+  //  VG_(umsg)("Cleaning up before exiting\n");
   client_running = False;
   main_replaced = False;
   target_id = VG_INVALID_THREADID;
@@ -673,7 +673,7 @@ static void SE_(report_too_many_instrs_to_commander)(void) {
   SE_(cleanup_and_exit)();
 }
 
-static void SE_(thread_exit)(ThreadId tid) { VG_(umsg)("%d exiting\n", tid); }
+static void SE_(thread_exit)(ThreadId tid) {}
 
 /**
  * @brief Records the current guest state if the client is running, main is
