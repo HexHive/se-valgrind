@@ -293,6 +293,8 @@ static Bool fuzz_program_state(SE_(cmd_server) * server) {
   server->using_fuzzed_io_vec = True;
   server->using_existing_io_vec = False;
 
+  SE_(seed) = VG_(random)(&SE_(seed));
+
   //  fuzz_input_pointers(server->current_io_vec, &SE_(seed));
   //  fuzz_registers(server->current_io_vec, &SE_(seed));
 
