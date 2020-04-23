@@ -310,7 +310,7 @@ Bool SE_(establish_memory_state)(SE_(cmd_server) * server) {
   UInt size;
   UWord obj_min_addr = 0, obj_max_addr = 0;
 
-  VG_(umsg)("Establishing memory state\n");
+  //  VG_(umsg)("Establishing memory state\n");
   size = VG_(sizeRangeMap)(server->current_io_vec->initial_state.address_state);
   for (UInt i = 0; i < size; i++) {
     UWord addr_min, addr_max, val;
@@ -325,15 +325,15 @@ Bool SE_(establish_memory_state)(SE_(cmd_server) * server) {
       if (!VG_(am_is_valid_for_client)(obj_min_addr,
                                        obj_max_addr - obj_min_addr,
                                        VKI_PROT_READ | VKI_PROT_WRITE)) {
-        VG_(umsg)
-        ("Mapping %p into client space\n", (void *)VG_PGROUNDDN(obj_min_addr));
+        Addr addr = VG_PGROUNDDN(obj_min_addr);
+        SizeT alloc_size = obj_max_addr - addr;
+        //        VG_(umsg)
+        //        ("Mapping %p into client space\n", (void *)addr);
         SysRes res = VG_(am_mmap_anon_fixed_client)(
-            VG_PGROUNDDN(obj_min_addr), VKI_PAGE_SIZE,
-            VKI_PROT_READ | VKI_PROT_WRITE);
+            addr, alloc_size, VKI_PROT_READ | VKI_PROT_WRITE);
         if (sr_isError(res)) {
           VG_(umsg)
-          ("Could not allocate %lu bytes at %p!\n", obj_max_addr - obj_min_addr,
-           (void *)obj_min_addr);
+          ("Could not allocate %lu bytes at %p!\n", alloc_size, (void *)addr);
           return False;
         }
       }
@@ -908,24 +908,28 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
      sizeof(tainted_loc));
     bytes_read += sizeof(tainted_loc);
 
-    if (tainted_loc.type == taint_addr || tainted_loc.type == taint_stack) {
-      VG_(umsg)
-      ("Received tainted %s %p\n",
-       tainted_loc.type == taint_stack ? "stack address" : "address",
-       (void *)tainted_loc.location.addr);
-      AddrInfo a;
-      VG_(describe_addr)(VG_(current_DiEpoch)(), tainted_loc.location.addr, &a);
-      VG_(pp_addrinfo)(tainted_loc.location.addr, &a);
-      VG_(clear_addrinfo)(&a);
-      VG_(umsg)("Faulting address = %p\n", (void *)taint_info.faulting_address);
-      VG_(umsg)
-      ("Faulting source = %p\n", (void *)taint_info.taint_source.location.addr);
-    } else if (tainted_loc.type == taint_reg) {
-      VG_(umsg)("Received tainted register %d\n", tainted_loc.location.offset);
-      VG_(umsg)("Invalid addr: %p\n", (void *)taint_info.faulting_address);
-    } else {
-      VG_(umsg)("Received invalid taint\n");
-    }
+    //    if (tainted_loc.type == taint_addr || tainted_loc.type == taint_stack)
+    //    {
+    //      VG_(umsg)
+    //      ("Received tainted %s %p\n",
+    //       tainted_loc.type == taint_stack ? "stack address" : "address",
+    //       (void *)tainted_loc.location.addr);
+    //      AddrInfo a;
+    //      VG_(describe_addr)(VG_(current_DiEpoch)(),
+    //      tainted_loc.location.addr, &a);
+    //      VG_(pp_addrinfo)(tainted_loc.location.addr, &a);
+    //      VG_(clear_addrinfo)(&a);
+    //      VG_(umsg)("Faulting address = %p\n", (void
+    //      *)taint_info.faulting_address); VG_(umsg)
+    //      ("Faulting source = %p\n", (void
+    //      *)taint_info.taint_source.location.addr);
+    //    } else if (tainted_loc.type == taint_reg) {
+    //      VG_(umsg)("Received tainted register %d\n",
+    //      tainted_loc.location.offset); VG_(umsg)("Invalid addr: %p\n", (void
+    //      *)taint_info.faulting_address);
+    //    } else {
+    //      VG_(umsg)("Received invalid taint\n");
+    //    }
 
     switch (tainted_loc.type) {
     case taint_reg:
@@ -972,9 +976,10 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
           return False;
         }
 
-        VG_(umsg)
-        ("Object near %p found at %p\n", (void *)taint_info.faulting_address,
-         (void *)obj_start);
+        //        VG_(umsg)
+        //        ("Object near %p found at %p\n", (void
+        //        *)taint_info.faulting_address,
+        //         (void *)obj_start);
 
         if (!lookup_obj(server, (Addr)reg_val->value, &obj_start, &obj_end)) {
           VG_(umsg)
@@ -1016,9 +1021,9 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
           VG_(umsg)("Failed to allocate new object\n");
           return False;
         }
-        VG_(umsg)
-        ("Setting register %d to %p\n", tainted_loc.location.offset,
-         (void *)(obj_loc));
+        //        VG_(umsg)
+        //        ("Setting register %d to %p\n", tainted_loc.location.offset,
+        //         (void *)(obj_loc));
         reg_val->is_ptr = True;
         reg_val->value = obj_loc;
       }
@@ -1071,8 +1076,9 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
           VG_(umsg)("Failed to allocate object\n");
           return False;
         }
-        VG_(umsg)
-        ("Registered %p as an object\n", (void *)tainted_loc.location.addr);
+        //        VG_(umsg)
+        //        ("Registered %p as an object\n", (void
+        //        *)tainted_loc.location.addr);
       } else {
         PtrdiffT offset = taint_info.taint_source.location.addr - obj_start;
         SizeT orig_size = obj_end - obj_start + 1;
@@ -1086,18 +1092,19 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
           new_size = obj_end - taint_info.taint_source.location.addr + 1;
         }
 
-        VG_(umsg)
-        ("Existing object found at [ %p -- %p ] at or near %p. "
-         "Reallocating to hold %lu bytes.\n",
-         (void *)obj_start, (void *)obj_end,
-         (void *)taint_info.taint_source.location.addr, new_size);
+        //        VG_(umsg)
+        //        ("Existing object found at [ %p -- %p ] at or near %p. "
+        //         "Reallocating to hold %lu bytes.\n",
+        //         (void *)obj_start, (void *)obj_end,
+        //         (void *)taint_info.taint_source.location.addr, new_size);
         Addr new_start, new_end;
         if (!reallocate_obj(server, new_size, obj_start, obj_end, &new_start,
                             &new_end, offset)) {
-          VG_(umsg)
-          ("Could not reallocate object at %p to accomodate new size of "
-           "%lu\n",
-           (void *)obj_start, new_size);
+          //          VG_(umsg)
+          //          ("Could not reallocate object at %p to accomodate new size
+          //          of "
+          //           "%lu\n",
+          //           (void *)obj_start, new_size);
           return False;
         }
 
@@ -1112,9 +1119,9 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
         }
 
         set_pointer_submember(server, new_start, new_end, offset, sub_pointer);
-        VG_(umsg)
-        ("Subpointer at %p = 0x%0lx\n", (void *)(new_start + offset),
-         *(Addr *)(new_start + offset));
+        //        VG_(umsg)
+        //        ("Subpointer at %p = 0x%0lx\n", (void *)(new_start + offset),
+        //         *(Addr *)(new_start + offset));
       }
       break;
     default:
@@ -1175,17 +1182,30 @@ Bool SE_(remove_global_memory_permissions)(SE_(cmd_server) * server) {
       result = False;
       goto exit;
     }
+    NSegment const *target_segment =
+        VG_(am_find_nsegment)(server->target_func_addr);
+    //    const HChar* target_file_name = VG_(am_get_filename)(target_segment);
+
     for (Int i = 0; i < entries_needed; i++) {
       start = entries[i];
       //      VG_(umsg)("Getting segment for %p\n", (void *)start);
       NSegment const *segment = VG_(am_find_nsegment)(start);
       if (segment) {
-        //        AddrInfo ai;
-        //        VG_(describe_addr)(VG_(current_DiEpoch)(), segment->start,
-        //        &ai); VG_(pp_addrinfo)(segment->start, &ai);
-        //        VG_(clear_addrinfo)(&ai);
-        if (segment->hasW && !segment->isCH && !segment->hasX &&
-            !VG_(am_addr_is_in_extensible_client_stack)(segment->start)) {
+        AddrInfo ai;
+        VG_(describe_addr)(VG_(current_DiEpoch)(), segment->start, &ai);
+        //        VG_(pp_addrinfo)(segment->start, &ai);
+        Bool remove_permission =
+            segment->hasW && !segment->isCH && !segment->hasX &&
+            !VG_(am_addr_is_in_extensible_client_stack)(segment->start) &&
+            (segment->kind != SkFileC || segment->ino == target_segment->ino);
+        //        if (remove_permission && ai.tag == Addr_SectKind) {
+        //          remove_permission = (ai.Addr.SectKind.kind != Vg_SectGOTPLT
+        //          &&
+        //                               ai.Addr.SectKind.kind != Vg_SectPLT &&
+        //                               ai.Addr.SectKind.kind != Vg_SectGOT);
+        //        }
+        VG_(clear_addrinfo)(&ai);
+        if (remove_permission) {
           //          VG_(umsg)
           //          ("Removing permissions for [ %p --- %p ]\n", (void
           //          *)segment->start,
@@ -1206,7 +1226,7 @@ exit:
   if (entries) {
     VG_(free)(entries);
   }
-  VG_(umsg)("Finished removing global permissions\n");
+  //  VG_(umsg)("Finished removing global permissions\n");
   return result;
 }
 

@@ -601,8 +601,8 @@ static void SE_(thread_creation)(ThreadId tid, ThreadId child) {
     (VG_(current_DiEpoch)(), SE_(command_server)->target_func_addr, &fnname);
     target_name = VG_(strdup)(SE_TOOL_ALLOC_STR, fnname);
     tl_assert(VG_(strlen)(target_name) > 0);
-    VG_(umsg)("Executing %s\n", target_name);
-    SE_(ppIOVec)(SE_(command_server)->current_io_vec);
+    //    VG_(umsg)("Executing %s\n", target_name);
+    //    SE_(ppIOVec)(SE_(command_server)->current_io_vec);
   }
 }
 
@@ -693,12 +693,13 @@ static void record_current_state(Addr addr) {
     VG_(get_shadow_regs_area)
     (target_id, (UChar *)&current_state, 0, 0, sizeof(current_state));
 
-    const HChar *fnname;
-    VG_(get_fnname)
-    (VG_(current_DiEpoch)(), current_state.VG_INSTR_PTR, &fnname);
-    VG_(umsg)
-    ("Recording state for %p/%p (%s)\n", (void *)current_state.VG_INSTR_PTR,
-     (void *)addr, fnname);
+    //    const HChar *fnname;
+    //    VG_(get_fnname)
+    //    (VG_(current_DiEpoch)(), current_state.VG_INSTR_PTR, &fnname);
+    //    VG_(umsg)
+    //    ("Recording state for %p/%p (%s)\n", (void
+    //    *)current_state.VG_INSTR_PTR,
+    //     (void *)addr, fnname);
 
     current_state.VG_INSTR_PTR = addr;
 
@@ -752,7 +753,7 @@ static void jump_to_target_function(void) {
       !SE_(establish_memory_state)(SE_(command_server))) {
     SE_(report_failure_to_commander)();
   }
-  VG_(umsg)("Done setting state\n");
+  //  VG_(umsg)("Done setting state\n");
 
   target_called = True;
   record_current_state(SE_(command_server)->target_func_addr);
@@ -1024,7 +1025,7 @@ static IRSB *SE_(instrument)(VgCallbackClosure *closure, IRSB *bb,
   //  VG_(umsg)("Instrumenting code\n");
   if (client_running && main_replaced) {
     bbOut = SE_(instrument_target)(bb, gWordTy);
-    //                ppIRSB(bbOut);
+    //                    ppIRSB(bbOut);
   } else if (client_running && !main_replaced && !target_called) {
     bbOut = SE_(replace_main_reference)(bb);
   }

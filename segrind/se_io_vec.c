@@ -455,17 +455,17 @@ Bool SE_(current_state_matches_expected)(SE_(io_vec) * io_vec,
   tl_assert(io_vec);
   tl_assert(return_value);
 
-  SE_(ppIOVec)(io_vec);
+  //  SE_(ppIOVec)(io_vec);
 
   SE_(return_value) *expected_return = &io_vec->return_value;
 
-  if (return_value->value.buf) {
-    VG_(printf)
-    ("return_value: 0x%lx %s\n", *(RegWord *)return_value->value.buf,
-     return_value->is_ptr ? "O" : "X");
-  } else {
-    VG_(printf)("Return value is NULL\n");
-  }
+  //  if (return_value->value.buf) {
+  //    VG_(printf)
+  //    ("return_value: 0x%lx %s\n", *(RegWord *)return_value->value.buf,
+  //     return_value->is_ptr ? "O" : "X");
+  //  } else {
+  //    VG_(printf)("Return value is NULL\n");
+  //  }
   if (!SE_(return_values_same)(expected_return, return_value)) {
     return False;
   }
@@ -503,11 +503,11 @@ Bool SE_(current_state_matches_expected)(SE_(io_vec) * io_vec,
         VG_(lookupRangeMap)
         (&expected_min_addr, &expected_max_addr, &expected_val,
          io_vec->expected_state, current_addr);
-        VG_(printf)
-        ("Comparing %p (%02x) with 0x%02x\n", (void *)current_addr,
-         *(UChar *)current_addr, (UChar)expected_val);
+        //        VG_(printf)
+        //        ("Comparing %p (%02x) with 0x%02x\n", (void *)current_addr,
+        //         *(UChar *)current_addr, (UChar)expected_val);
         if (VG_(memcmp)((void *)current_addr, &expected_val, 1) != 0) {
-          VG_(umsg)("6\n");
+          //          VG_(umsg)("6\n");
           return False;
         }
       }
@@ -520,7 +520,7 @@ Bool SE_(current_state_matches_expected)(SE_(io_vec) * io_vec,
           VG_(am_is_valid_for_client)(current_addr, 1, VKI_PROT_WRITE) ||
           VG_(am_is_valid_for_client)(current_addr, 1, VKI_PROT_EXEC);
       if (!is_valid) {
-        VG_(umsg)("7\n");
+        //        VG_(umsg)("7\n");
         return False;
       }
       i += sizeof(Addr) - 1;
@@ -530,7 +530,7 @@ Bool SE_(current_state_matches_expected)(SE_(io_vec) * io_vec,
     }
   }
 
-  VG_(umsg)("IOVec accepted\n");
+  //  VG_(umsg)("IOVec accepted\n");
   return True;
 }
 
@@ -540,7 +540,7 @@ Bool SE_(return_values_same)(SE_(return_value) * rv_1,
   tl_assert(rv_2);
 
   if (rv_1->is_ptr != rv_2->is_ptr) {
-    VG_(umsg)("1\n");
+    //    VG_(umsg)("1\n");
     return False;
   }
 
@@ -549,19 +549,19 @@ Bool SE_(return_values_same)(SE_(return_value) * rv_1,
     Long val2 = *(Long *)rv_2->value.buf;
 
     if (val1 < 0 && val2 > 0) {
-      VG_(umsg)("2\n");
+      //      VG_(umsg)("2\n");
       return False;
     }
     if (val1 > 0 && val2 < 0) {
-      VG_(umsg)("3\n");
+      //      VG_(umsg)("3\n");
       return False;
     }
     if (val1 == 0 && val2 != 0) {
-      VG_(umsg)("4\n");
+      //      VG_(umsg)("4\n");
       return False;
     }
     if (val1 != 0 && val2 == 0) {
-      VG_(umsg)("5\n");
+      //      VG_(umsg)("5\n");
       return False;
     }
   }
