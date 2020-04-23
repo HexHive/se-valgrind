@@ -1372,16 +1372,9 @@ static Bool SE_(fork_and_execute)(SE_(cmd_server) * server) {
       goto exit;
     }
 
-    //    VG_(release_BigLock_LL)("SE_(cmd_server)");
-
-    VG_(umsg)
-    ("Server forking %u with status %s\n", server->attempt_count,
-     SE_(server_state_str)(server->current_state));
-
-    ThreadState *tst = VG_(get_ThreadState)(server->executor_tid);
-    VG_(umsg)
-    ("Thread %u lwpid = %d (%u)\n", server->executor_tid, tst->os_state.lwpid,
-     VG_(owns_BigLock_LL)(server->executor_tid));
+    //    VG_(umsg)
+    //    ("Server forking %u with status %s\n", server->attempt_count,
+    //     SE_(server_state_str)(server->current_state));
 
     pid = VG_(fork)();
     if (pid < 0) {
@@ -1398,7 +1391,6 @@ static Bool SE_(fork_and_execute)(SE_(cmd_server) * server) {
         VG_(close)(server->commander_w_fd);
 
         /* Child process exits and starts executing target code */
-        VG_(umsg)("Child executing\n");
         VG_(force_BigLock_reset)("SE_(cmd_server)");
         return True;
       } else {
@@ -1476,7 +1468,6 @@ void SE_(start_server)(SE_(cmd_server) * server, ThreadId executor_tid) {
         ((fds[0].revents & VKI_POLLPRI) == VKI_POLLPRI)) {
       if (handle_command(server)) {
         if (SE_(fork_and_execute)(server)) {
-          VG_(umsg)("Child returning after fork\n");
           return;
         }
       } /*else {

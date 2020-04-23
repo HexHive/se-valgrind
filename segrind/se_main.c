@@ -44,7 +44,7 @@
 #include "pub_tool_stacktrace.h"
 #include "pub_tool_xarray.h"
 
-#include "../coregrind/pub_core_scheduler.h"
+//#include "../coregrind/pub_core_scheduler.h"
 
 /**
  * @brief Is the guest executing code?
@@ -306,7 +306,7 @@ static void SE_(cleanup_and_exit)(void) {
     SE_(command_server) = NULL;
   }
 
-  VG_(release_BigLock_LL)(NULL);
+  //  VG_(release_BigLock_LL)(NULL);
   VG_(exit)(0);
 }
 
@@ -601,7 +601,7 @@ static void SE_(thread_creation)(ThreadId tid, ThreadId child) {
     (VG_(current_DiEpoch)(), SE_(command_server)->target_func_addr, &fnname);
     target_name = VG_(strdup)(SE_TOOL_ALLOC_STR, fnname);
     tl_assert(VG_(strlen)(target_name) > 0);
-    VG_(umsg)("Executing %s\n", target_name);
+    //    VG_(umsg)("Executing %s\n", target_name);
     //    SE_(ppIOVec)(SE_(command_server)->current_io_vec);
   }
 }
@@ -768,7 +768,6 @@ static void jump_to_target_function(void) {
 static void SE_(start_client_code)(ThreadId tid, ULong blocks_dispatched) {
   if (!client_running && tid == target_id) {
     client_running = True;
-    VG_(umsg)("Client running\n");
   }
 
   if (!main_replaced &&
