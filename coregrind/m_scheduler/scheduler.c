@@ -426,28 +426,28 @@ void VG_(acquire_BigLock_LL) ( const HChar* who )
 }
 
 /* See pub_core_scheduler.h for description */
-void VG_(release_BigLock_LL) ( const HChar* who )
-{
-   ML_(release_sched_lock)(the_BigLock);
+void VG_(release_BigLock_LL) ( const HChar* who ) {
+  ML_(release_sched_lock)(the_BigLock);
 }
 
-Bool VG_(owns_BigLock_LL) ( ThreadId tid )
-{
-   return (ML_(get_sched_lock_owner)(the_BigLock)
-           == VG_(threads)[tid].os_state.lwpid);
+Bool VG_(owns_BigLock_LL)(ThreadId tid) {
+  return (ML_(get_sched_lock_owner)(the_BigLock) ==
+          VG_(threads)[tid].os_state.lwpid);
 }
 
+void VG_(force_BigLock_reset)(const HChar *who) {
+  return ML_(reset_sched_lock)(the_BigLock);
+}
 
 /* Clear out the ThreadState and release the semaphore. Leaves the
    ThreadState in VgTs_Zombie state, so that it doesn't get
    reallocated until the caller is really ready. */
-void VG_(exit_thread)(ThreadId tid)
-{
-   vg_assert(VG_(is_valid_tid)(tid));
-   vg_assert(VG_(is_running_thread)(tid));
-   vg_assert(VG_(is_exiting)(tid));
+void VG_(exit_thread)(ThreadId tid) {
+  vg_assert(VG_(is_valid_tid)(tid));
+  vg_assert(VG_(is_running_thread)(tid));
+  vg_assert(VG_(is_exiting)(tid));
 
-   mostly_clear_thread_record(tid);
+  mostly_clear_thread_record(tid);
    VG_(running_tid) = VG_INVALID_THREADID;
 
    /* There should still be a valid exitreason for this thread */

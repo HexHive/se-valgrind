@@ -43,6 +43,7 @@ void ML_(destroy_sched_lock)(struct sched_lock *p);
 int ML_(get_sched_lock_owner)(struct sched_lock *p);
 void ML_(acquire_sched_lock)(struct sched_lock *p);
 void ML_(release_sched_lock)(struct sched_lock *p);
+void ML_(reset_sched_lock)(struct sched_lock *p);
 
 #endif   // __PRIV_SCHED_LOCK_H
 

@@ -568,7 +568,7 @@ static void SE_(thread_creation)(ThreadId tid, ThreadId child) {
 
     if (SE_(command_server)->current_state != SERVER_EXECUTING &&
         SE_(command_server)->current_state != SERVER_GETTING_INIT_STATE) {
-      VG_(exit)(0);
+      SE_(cleanup_and_exit)();
     }
 
     /* Child executors arrive here */
@@ -601,7 +601,7 @@ static void SE_(thread_creation)(ThreadId tid, ThreadId child) {
     (VG_(current_DiEpoch)(), SE_(command_server)->target_func_addr, &fnname);
     target_name = VG_(strdup)(SE_TOOL_ALLOC_STR, fnname);
     tl_assert(VG_(strlen)(target_name) > 0);
-    //    VG_(umsg)("Executing %s\n", target_name);
+    VG_(umsg)("Executing %s\n", target_name);
     //    SE_(ppIOVec)(SE_(command_server)->current_io_vec);
   }
 }
@@ -673,7 +673,7 @@ static void SE_(report_too_many_instrs_to_commander)(void) {
   SE_(cleanup_and_exit)();
 }
 
-static void SE_(thread_exit)(ThreadId tid) {}
+static void SE_(thread_exit)(ThreadId tid) { VG_(umsg)("%d exiting\n", tid); }
 
 /**
  * @brief Records the current guest state if the client is running, main is
@@ -768,6 +768,7 @@ static void jump_to_target_function(void) {
 static void SE_(start_client_code)(ThreadId tid, ULong blocks_dispatched) {
   if (!client_running && tid == target_id) {
     client_running = True;
+    VG_(umsg)("Client running\n");
   }
 
   if (!main_replaced &&
@@ -1022,7 +1023,7 @@ static IRSB *SE_(instrument)(VgCallbackClosure *closure, IRSB *bb,
                              IRType hWordTy) {
   IRSB *bbOut = bb;
 
-  //  VG_(umsg)("Instrumenting code\n");
+  //    VG_(umsg)("Instrumenting code\n");
   if (client_running && main_replaced) {
     bbOut = SE_(instrument_target)(bb, gWordTy);
     //                    ppIRSB(bbOut);

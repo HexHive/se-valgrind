@@ -75,21 +75,23 @@ extern void VG_(acquire_BigLock_LL) ( const HChar* who );
    caller must be careful not to touch any shared state.  It is also
    the caller's responsibility to actually block until the thread is
    ready to run again. */
-extern void VG_(release_BigLock) ( ThreadId tid,
-                                   ThreadStatus state, const HChar* who );
+extern void VG_(release_BigLock)(ThreadId tid, ThreadStatus state,
+                                 const HChar *who);
 
 /* Matching function to acquire_BigLock_LL. */
-extern void VG_(release_BigLock_LL) ( const HChar* who );
+extern void VG_(release_BigLock_LL)(const HChar *who);
 
 /* Whether the specified thread owns the big lock. */
-extern Bool VG_(owns_BigLock_LL) ( ThreadId tid );
+extern Bool VG_(owns_BigLock_LL)(ThreadId tid);
+
+extern void VG_(force_BigLock_reset)(const HChar *who);
 
 /* Yield the CPU for a while.  Drops/acquires the lock using the
    normal (non _LL) functions. */
 extern void VG_(vg_yield)(void);
 
 // The scheduler.
-extern VgSchedReturnCode VG_(scheduler) ( ThreadId tid );
+extern VgSchedReturnCode VG_(scheduler)(ThreadId tid);
 
 // Initialise, phase 1.  Zero out VG_(threads), decide on the root
 // ThreadId and initialise the bigLock.

@@ -64,21 +64,25 @@ static int get_sched_lock_owner(struct sched_lock *p)
    return p->sema.owner_lwpid;
 }
 
-static void acquire_sched_lock(struct sched_lock *p)
-{
-   ML_(sema_down)(&p->sema, False);
+static void acquire_sched_lock(struct sched_lock *p) {
+  ML_(sema_down)(&p->sema, False);
 }
 
-static void release_sched_lock(struct sched_lock *p)
-{
-   ML_(sema_up)(&p->sema, False);
+static void release_sched_lock(struct sched_lock *p) {
+  ML_(sema_up)(&p->sema, False);
+}
+
+static void reset_sched_lock(struct sched_lock *p) {
+  ML_(sema_reset)(&p->sema);
 }
 
 const struct sched_lock_ops ML_(generic_sched_lock_ops) = {
-   .get_sched_lock_name  = get_sched_lock_name,
-   .create_sched_lock    = create_sched_lock,
-   .destroy_sched_lock   = destroy_sched_lock,
-   .get_sched_lock_owner = get_sched_lock_owner,
-   .acquire_sched_lock   = acquire_sched_lock,
-   .release_sched_lock   = release_sched_lock,
+    .get_sched_lock_name = get_sched_lock_name,
+    .create_sched_lock = create_sched_lock,
+    .destroy_sched_lock = destroy_sched_lock,
+    .get_sched_lock_owner = get_sched_lock_owner,
+    .acquire_sched_lock = acquire_sched_lock,
+    .release_sched_lock = release_sched_lock,
+    .reset_sched_lock = reset_sched_lock,
+
 };

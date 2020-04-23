@@ -43,7 +43,8 @@ typedef struct {
 void ML_(sema_init)   ( vg_sema_t *sema );
 void ML_(sema_deinit) ( vg_sema_t *sema );
 void ML_(sema_down)   ( vg_sema_t *sema, Bool as_LL );
-void ML_(sema_up)     ( vg_sema_t *sema, Bool as_LL );
+void ML_(sema_up)(vg_sema_t *sema, Bool as_LL);
+void ML_(sema_reset)(vg_sema_t *sema);
 
 #endif   // __PRIV_SEMA_H
 

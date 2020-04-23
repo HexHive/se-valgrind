@@ -19,6 +19,7 @@
 
 #include "../coregrind/pub_core_aspacemgr.h"
 #include "../coregrind/pub_core_debuginfo.h"
+#include "../coregrind/pub_core_scheduler.h"
 
 #include <sys/wait.h>
 
@@ -1247,22 +1248,20 @@ static Bool wait_for_child(SE_(cmd_server) * server) {
 
   struct vki_pollfd fds[1];
   fds[0].fd = server->executor_pipe[0];
-  fds[0].events = VKI_POLLIN | VKI_POLLHUP | VKI_POLLPRI;
+  fds[0].events = VKI_POLLIN | VKI_POLLHUP | VKI_POLLPRI | VKI_POLLERR;
   //  VG_(umsg)
   //  ("Waiting for child process %d for %u ms\n", server->running_pid,
   //   SE_(MaxDuration));
   fds[0].revents = 0;
   SysRes result =
       VG_(poll)(fds, sizeof(fds) / sizeof(struct vki_pollfd), SE_(MaxDuration));
-  if (sr_Res(result) == 0) {
-    if (sr_Err(result)) {
-      VG_(umsg)("Poll failed\n");
-      report_error(server, "Executor poll failed");
-    } else {
-      VG_(umsg)("Poll timed out\n");
-      report_timeout(server);
-    }
-
+  if (sr_isError(result)) {
+    VG_(umsg)("Poll failed\n");
+    report_error(server, "Executor poll failed");
+    goto cleanup;
+  } else if (sr_Res(result) == 0) {
+    VG_(umsg)("Poll timed out\n");
+    report_timeout(server);
     goto cleanup;
   }
 
@@ -1313,6 +1312,9 @@ static Bool wait_for_child(SE_(cmd_server) * server) {
     goto cleanup;
   } else if ((fds[0].revents & VKI_POLLHUP) == VKI_POLLHUP) {
     VG_(umsg)("Executor Hung up\n");
+    report_error(server, NULL);
+  } else if (((fds[0].revents & VKI_POLLERR) == VKI_POLLERR)) {
+    VG_(umsg)("Poll pipe error\n");
     report_error(server, NULL);
   }
 
@@ -1370,9 +1372,16 @@ static Bool SE_(fork_and_execute)(SE_(cmd_server) * server) {
       goto exit;
     }
 
+    //    VG_(release_BigLock_LL)("SE_(cmd_server)");
+
     VG_(umsg)
     ("Server forking %u with status %s\n", server->attempt_count,
      SE_(server_state_str)(server->current_state));
+
+    ThreadState *tst = VG_(get_ThreadState)(server->executor_tid);
+    VG_(umsg)
+    ("Thread %u lwpid = %d (%u)\n", server->executor_tid, tst->os_state.lwpid,
+     VG_(owns_BigLock_LL)(server->executor_tid));
 
     pid = VG_(fork)();
     if (pid < 0) {
@@ -1389,6 +1398,8 @@ static Bool SE_(fork_and_execute)(SE_(cmd_server) * server) {
         VG_(close)(server->commander_w_fd);
 
         /* Child process exits and starts executing target code */
+        VG_(umsg)("Child executing\n");
+        VG_(force_BigLock_reset)("SE_(cmd_server)");
         return True;
       } else {
         server->running_pid = pid;
@@ -1465,6 +1476,7 @@ void SE_(start_server)(SE_(cmd_server) * server, ThreadId executor_tid) {
         ((fds[0].revents & VKI_POLLPRI) == VKI_POLLPRI)) {
       if (handle_command(server)) {
         if (SE_(fork_and_execute)(server)) {
+          VG_(umsg)("Child returning after fork\n");
           return;
         }
       } /*else {
