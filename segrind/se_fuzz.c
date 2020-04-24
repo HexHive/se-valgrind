@@ -48,7 +48,7 @@ static char rand_char(UInt *seed) {
   if (rand_bool(seed)) {
     return (char)rand_uint(seed, 256);
   }
-  const char Special[] = "!*'();:@&=+$,/?%#[]012Az-`~.\xff\x00";
+  const char Special[] = " \t!*'();:@&=+$,/?%#[]012Az-`~.\xff\x00";
   return Special[rand_uint(seed, sizeof(Special) - 1)];
 }
 

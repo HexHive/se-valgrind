@@ -1507,7 +1507,7 @@ Bool SE_(is_valid_transition)(const SE_(cmd_server) * server,
             next_state == SERVER_WAITING_TO_EXECUTE);
   case SERVER_WAITING_TO_EXECUTE:
     return (next_state == SERVER_WAIT_FOR_CMD ||
-            next_state == SERVER_EXECUTING);
+            next_state == SERVER_EXECUTING || next_state == SERVER_FUZZING);
   case SERVER_EXECUTING:
     return (next_state == SERVER_WAIT_FOR_CMD ||
             next_state == SERVER_REPORT_ERROR || next_state == SERVER_FUZZING);
