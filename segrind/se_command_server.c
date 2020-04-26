@@ -1246,6 +1246,7 @@ static Bool wait_for_child(SE_(cmd_server) * server) {
             server->current_state == SERVER_GETTING_INIT_STATE);
 
   Bool should_fork = False;
+  Int status;
 
   struct vki_pollfd fds[1];
   fds[0].fd = server->executor_pipe[0];
@@ -1320,10 +1321,11 @@ static Bool wait_for_child(SE_(cmd_server) * server) {
   }
 
 cleanup:
-  //  wait_result = VG_(waitpid)(server->running_pid, &status, VKI_WNOHANG);
+  //    wait_result = VG_(waitpid)(server->running_pid, &status, VKI_WNOHANG);
   //  VG_(umsg)("Wait result = %d\tstatus = %d\n", wait_result, status);
   //  if (wait_result < 0 || (!WIFEXITED(status) && !WIFSIGNALED(status))) {
   VG_(kill)(server->running_pid, VKI_SIGKILL);
+  VG_(waitpid)(-1, &status, VKI_WNOHANG);
   //  }
 
   server->running_pid = -1;
