@@ -60,7 +60,7 @@ static SizeT write_coverage_to_commander(SE_(cmd_server) * server) {
   SE_(Memoize_OSetWord)(server->coverage, &obj);
 
   /* Avoid copying the data twice */
-  SE_(cmd_msg) *cmd_msg = SE_(create_cmd_msg)(SEMSG_COVERAGE, 0, NULL);
+  SE_(cmd_msg) *cmd_msg = SE_(create_cmd_msg)(SEMSG_OK, 0, NULL);
   cmd_msg->data = obj.buf;
   cmd_msg->length = obj.len;
 
@@ -1156,6 +1156,7 @@ static void handle_coverage(SE_(cmd_server) * server) {
     server->coverage =
         VG_(OSetWord_Create)(VG_(malloc), SE_TOOL_ALLOC_STR, VG_(free));
   }
+  VG_(OSetWord_ResetIter)(coverage);
 
   UWord addr;
   while (VG_(OSetWord_Next)(coverage, &addr)) {
