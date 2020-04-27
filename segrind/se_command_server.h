@@ -55,7 +55,6 @@ typedef struct {
   Addr initial_frame_ptr;
   Addr initial_stack_ptr;
   Addr min_stack_ptr;
-  Bool needs_coverage;
   OSet *coverage;
   SE_(io_vec) * current_io_vec;
 } SE_(cmd_server);

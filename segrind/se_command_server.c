@@ -290,7 +290,6 @@ static Bool fuzz_program_state(SE_(cmd_server) * server) {
   }
 
   server->current_io_vec->random_seed = SE_(seed);
-  server->needs_coverage = True;
   server->using_fuzzed_io_vec = True;
   server->using_existing_io_vec = False;
 
@@ -1149,8 +1148,6 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
  * @param server
  */
 static void handle_coverage(SE_(cmd_server) * server) {
-  tl_assert(server->needs_coverage);
-
   OSet *coverage = SE_(read_coverage)(server);
   if (!server->coverage) {
     server->coverage =
@@ -1305,7 +1302,7 @@ static Bool wait_for_child(SE_(cmd_server) * server) {
         server->min_stack_ptr = server->initial_stack_ptr;
         report_success(server, 0, NULL);
       } else {
-        if (cmd_msg->msg_type == SEMSG_OK && server->needs_coverage) {
+        if (cmd_msg->msg_type == SEMSG_OK) {
           handle_coverage(server);
         }
         write_to_commander(server, cmd_msg, True);
@@ -1634,7 +1631,6 @@ void SE_(reset_server)(SE_(cmd_server) * server) {
   server->using_fuzzed_io_vec = False;
   server->using_existing_io_vec = False;
   server->attempt_count = 0;
-  server->needs_coverage = False;
   server->min_stack_ptr = -1;
 
   if (server->coverage) {

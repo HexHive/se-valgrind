@@ -620,8 +620,8 @@ static void SE_(maybe_report_success_to_commader)(void) {
 
   if (SE_(command_server)->current_state != SERVER_GETTING_INIT_STATE) {
     if (SE_(command_server)->using_fuzzed_io_vec) {
-      //      VG_(umsg)("!!!!!! Successfully generated IOVec !!!!!!!!!\n");
       SE_(send_fuzzed_io_vec)();
+      SE_(write_coverage_to_cmd_server)();
     } else if (SE_(command_server)->using_existing_io_vec) {
       VexGuestArchState last_state;
       VG_(get_shadow_regs_area)
@@ -643,11 +643,8 @@ static void SE_(maybe_report_success_to_commader)(void) {
         SE_(report_failure_to_commander)();
       } else {
         SE_(write_msg_to_commander)(SEMSG_OK, 0, NULL);
+        SE_(write_coverage_to_cmd_server)();
       }
-    }
-
-    if (SE_(command_server)->needs_coverage) {
-      SE_(write_coverage_to_cmd_server)();
     }
   }
 
