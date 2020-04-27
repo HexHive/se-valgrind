@@ -229,15 +229,15 @@ void SE_(fuzz_region)(UInt *seed, Addr start, Addr end) {
       Mutate_ChangeByte,   Mutate_ShuffleBytes,       Memset_Random_Char};
 
   UInt idx;
-  UInt mutation_count = rand_uint(seed, sizeof(funcs) / sizeof(void *)) + 1;
-  while (mutation_count--) {
-    do {
-      idx = rand_uint(seed, sizeof(funcs) / sizeof(void *));
-      //                VG_(umsg)
-      //                ("Fuzzing [%p - %p] (%lu bytes) using function %u\n",
-      //                (void
-      //                *)start,
-      //                 (void *)end, end - start + 1, idx);
-    } while (!(*funcs[idx])(seed, (UChar *)start, end - start + 1));
-  }
+  //  UInt mutation_count = rand_uint(seed, sizeof(funcs) / sizeof(void *)) + 1;
+  //  while (mutation_count--) {
+  do {
+    idx = rand_uint(seed, sizeof(funcs) / sizeof(void *));
+    //                VG_(umsg)
+    //                ("Fuzzing [%p - %p] (%lu bytes) using function %u\n",
+    //                (void
+    //                *)start,
+    //                 (void *)end, end - start + 1, idx);
+  } while (!(*funcs[idx])(seed, (UChar *)start, end - start + 1));
+  //  }
 }
