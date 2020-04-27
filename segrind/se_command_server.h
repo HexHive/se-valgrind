@@ -50,6 +50,7 @@ typedef struct {
   Int executor_pipe[2];
   Bool using_fuzzed_io_vec;
   Bool using_existing_io_vec;
+  Bool added_client_code_offset;
   ThreadId executor_tid;
   UInt attempt_count;
   Addr initial_frame_ptr;

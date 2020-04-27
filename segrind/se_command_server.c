@@ -158,10 +158,12 @@ static Bool handle_set_target_cmd(SE_(cmd_msg) * msg,
 
   VG_(get_fnname)
   (VG_(current_DiEpoch)(), final_addr, &func_name);
+  server->added_client_code_offset = True;
   if (VG_(strlen)(func_name) == 0) {
     final_addr = *func_addr;
     VG_(get_fnname)
     (VG_(current_DiEpoch)(), final_addr, &func_name);
+    server->added_client_code_offset = False;
   }
 
   if (VG_(strlen)(func_name) > 0 &&
@@ -178,6 +180,7 @@ static Bool handle_set_target_cmd(SE_(cmd_msg) * msg,
 
   VG_(umsg)("Could not find function at 0x%lx\n", *func_addr);
   server->target_func_addr = 0;
+  server->added_client_code_offset = False;
   return False;
 }
 
@@ -1663,6 +1666,9 @@ OSet *SE_(read_coverage)(SE_(cmd_server) * server) {
     Word addr;
     VG_(memcpy)(&addr, (UChar *)msg->data + bytes_read, sizeof(addr));
     bytes_read += sizeof(addr);
+    if (server->added_client_code_offset) {
+      addr -= CLIENT_CODE_LOAD_ADDR;
+    }
 
     if (!VG_(OSetWord_Contains)(result, addr)) {
       VG_(OSetWord_Insert)(result, addr);
