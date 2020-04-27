@@ -53,6 +53,22 @@ static char rand_char(UInt *seed) {
 }
 
 /**
+ * @brief Memset region with random character
+ * @param seed
+ * @param Data
+ * @param Size
+ * @return
+ */
+static Bool Memset_Random_Char(UInt *seed, UChar *Data, SizeT Size) {
+  if (Size <= 0) {
+    return False;
+  }
+
+  VG_(memset)(Data, rand_char(seed), Size);
+  return True;
+}
+
+/**
  * @brief Shuffles a random amount of bytes from a random location in Data
  * @param seed
  * @param Data
@@ -210,15 +226,18 @@ void SE_(fuzz_region)(UInt *seed, Addr start, Addr end) {
 
   Bool (*funcs[])(UInt *, UChar *, SizeT) = {
       ChangeBinaryInteger, Mutate_ChangeASCIIInteger, Mutate_ChangeBit,
-      Mutate_ChangeByte, Mutate_ShuffleBytes};
+      Mutate_ChangeByte,   Mutate_ShuffleBytes,       Memset_Random_Char};
 
   UInt idx;
-  do {
-    idx = rand_uint(seed, sizeof(funcs) / sizeof(void *));
-    //                VG_(umsg)
-    //                ("Fuzzing [%p - %p] (%lu bytes) using function %u\n",
-    //                (void
-    //                *)start,
-    //                 (void *)end, end - start + 1, idx);
-  } while (!(*funcs[idx])(seed, (UChar *)start, end - start + 1));
+  UInt mutation_count = rand_uint(seed, sizeof(funcs) / sizeof(void *)) + 1;
+  while (mutation_count--) {
+    do {
+      idx = rand_uint(seed, sizeof(funcs) / sizeof(void *));
+      //                VG_(umsg)
+      //                ("Fuzzing [%p - %p] (%lu bytes) using function %u\n",
+      //                (void
+      //                *)start,
+      //                 (void *)end, end - start + 1, idx);
+    } while (!(*funcs[idx])(seed, (UChar *)start, end - start + 1));
+  }
 }
