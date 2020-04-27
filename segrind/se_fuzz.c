@@ -64,6 +64,7 @@ static Bool Memset_Random_Char(UInt *seed, UChar *Data, SizeT Size) {
     return False;
   }
 
+  VG_(memset)(Data, 0, Size);
   VG_(memset)(Data, rand_char(seed), Size);
   return True;
 }
