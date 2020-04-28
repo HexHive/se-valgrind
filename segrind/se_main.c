@@ -595,13 +595,14 @@ static void SE_(thread_creation)(ThreadId tid, ThreadId child) {
 
     VG_(set_fault_catcher)(SE_(signal_handler));
     VG_(set_call_fault_catcher_in_generated)(True);
+    SE_(enable_global_memory_permissions)(SE_(command_server));
 
     const HChar *fnname;
     VG_(get_fnname)
     (VG_(current_DiEpoch)(), SE_(command_server)->target_func_addr, &fnname);
     target_name = VG_(strdup)(SE_TOOL_ALLOC_STR, fnname);
     tl_assert(VG_(strlen)(target_name) > 0);
-    //    VG_(umsg)("Executing %s\n", target_name);
+    //        VG_(umsg)("Executing %s\n", target_name);
     //    SE_(ppIOVec)(SE_(command_server)->current_io_vec);
   }
 }
@@ -690,13 +691,13 @@ static void record_current_state(Addr addr) {
     VG_(get_shadow_regs_area)
     (target_id, (UChar *)&current_state, 0, 0, sizeof(current_state));
 
-    //    const HChar *fnname;
-    //    VG_(get_fnname)
-    //    (VG_(current_DiEpoch)(), current_state.VG_INSTR_PTR, &fnname);
-    //    VG_(umsg)
-    //    ("Recording state for %p/%p (%s)\n", (void
-    //    *)current_state.VG_INSTR_PTR,
-    //     (void *)addr, fnname);
+    //        const HChar *fnname;
+    //        VG_(get_fnname)
+    //        (VG_(current_DiEpoch)(), current_state.VG_INSTR_PTR, &fnname);
+    //        VG_(umsg)
+    //        ("Recording state for %p/%p (%s)\n", (void
+    //        *)current_state.VG_INSTR_PTR,
+    //         (void *)addr, fnname);
 
     current_state.VG_INSTR_PTR = addr;
 
@@ -751,6 +752,7 @@ static void jump_to_target_function(void) {
     SE_(report_failure_to_commander)();
   }
   //  VG_(umsg)("Done setting state\n");
+  //  SE_(ppIOVec)(SE_(command_server)->current_io_vec);
 
   target_called = True;
   record_current_state(SE_(command_server)->target_func_addr);

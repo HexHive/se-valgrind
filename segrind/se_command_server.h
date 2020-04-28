@@ -138,8 +138,26 @@ Bool SE_(msg_can_be_handled)(const SE_(cmd_server) * server,
  */
 const HChar *SE_(server_state_str)(SE_(cmd_server_state) state);
 
+/**
+ * @brief Sets all non-executable global data segments to PROT_NONE permission
+ * @param server
+ * @return
+ */
 Bool SE_(remove_global_memory_permissions)(SE_(cmd_server) * server);
 
+/**
+ * @brief Seta all non-executable global data segments to PROT_READ | PROT_WRITE
+ * permission
+ * @param server
+ * @return
+ */
+Bool SE_(enable_global_memory_permissions)(SE_(cmd_server) * server);
+
+/**
+ * @brief Sets read/write permissions for allocated objects
+ * @param server
+ * @return
+ */
 Bool SE_(establish_memory_state)(SE_(cmd_server) * server);
 
 #endif // SE_VALGRIND_SE_COMMAND_SERVER_H

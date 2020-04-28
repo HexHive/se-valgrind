@@ -980,7 +980,7 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
            (void *)taint_info.faulting_address);
           return False;
         }
-
+        //
         //        VG_(umsg)
         //        ("Object near %p found at %p\n", (void
         //        *)taint_info.faulting_address,
@@ -1105,11 +1105,11 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
         Addr new_start, new_end;
         if (!reallocate_obj(server, new_size, obj_start, obj_end, &new_start,
                             &new_end, offset)) {
-          //          VG_(umsg)
-          //          ("Could not reallocate object at %p to accomodate new size
-          //          of "
-          //           "%lu\n",
-          //           (void *)obj_start, new_size);
+          VG_(umsg)
+          ("Could not reallocate object at %p to accomodate new size "
+           "of "
+           "%lu\n",
+           (void *)obj_start, new_size);
           return False;
         }
 
@@ -1168,7 +1168,8 @@ static void handle_coverage(SE_(cmd_server) * server) {
   VG_(OSetWord_Destroy)(coverage);
 }
 
-Bool SE_(remove_global_memory_permissions)(SE_(cmd_server) * server) {
+static Bool set_global_memory_permissions(SE_(cmd_server) * server,
+                                          Int permission) {
   Int entries_needed;
   Addr *entries = NULL;
   Bool result = True;
@@ -1198,24 +1199,23 @@ Bool SE_(remove_global_memory_permissions)(SE_(cmd_server) * server) {
         AddrInfo ai;
         VG_(describe_addr)(VG_(current_DiEpoch)(), segment->start, &ai);
         //        VG_(pp_addrinfo)(segment->start, &ai);
-        Bool remove_permission =
+        Bool change_permission =
             segment->hasW && !segment->isCH && !segment->hasX &&
             !VG_(am_addr_is_in_extensible_client_stack)(segment->start) &&
             (segment->kind != SkFileC || segment->ino == target_segment->ino);
-        //        if (remove_permission && ai.tag == Addr_SectKind) {
-        //          remove_permission = (ai.Addr.SectKind.kind != Vg_SectGOTPLT
+        //        if (change_permission && ai.tag == Addr_SectKind) {
+        //          change_permission = (ai.Addr.SectKind.kind != Vg_SectGOTPLT
         //          &&
         //                               ai.Addr.SectKind.kind != Vg_SectPLT &&
         //                               ai.Addr.SectKind.kind != Vg_SectGOT);
         //        }
         VG_(clear_addrinfo)(&ai);
-        if (remove_permission) {
-          //          VG_(umsg)
-          //          ("Removing permissions for [ %p --- %p ]\n", (void
-          //          *)segment->start,
-          //           (void *)segment->end);
+        if (change_permission) {
+          VG_(umsg)
+          ("Changing permissions for [ %p --- %p ] to %d\n",
+           (void *)segment->start, (void *)segment->end, permission);
           SysRes res = VG_(am_mmap_anon_fixed_client)(
-              segment->start, segment->end - segment->start, VKI_PROT_NONE);
+              segment->start, segment->end - segment->start, permission);
           if (sr_Err(res)) {
             VG_(umsg)("Failed to set permissions\n");
             result = False;
@@ -1232,6 +1232,17 @@ exit:
   }
   //  VG_(umsg)("Finished removing global permissions\n");
   return result;
+}
+
+Bool SE_(enable_global_memory_permissions)(SE_(cmd_server) * server) {
+  return True;
+  //  return set_global_memory_permissions(server, VKI_PROT_READ |
+  //  VKI_PROT_WRITE | VKI_PROT_EXEC);
+}
+
+Bool SE_(remove_global_memory_permissions)(SE_(cmd_server) * server) {
+  return True;
+  //  return set_global_memory_permissions(server, VKI_PROT_NONE);
 }
 
 /**
