@@ -693,13 +693,13 @@ static void record_current_state(Addr addr) {
     VG_(get_shadow_regs_area)
     (target_id, (UChar *)&current_state, 0, 0, sizeof(current_state));
 
-    //        const HChar *fnname;
-    //        VG_(get_fnname)
-    //        (VG_(current_DiEpoch)(), current_state.VG_INSTR_PTR, &fnname);
-    //        VG_(umsg)
-    //        ("Recording state for %p/%p (%s)\n", (void
-    //        *)current_state.VG_INSTR_PTR,
-    //         (void *)addr, fnname);
+    //            const HChar *fnname;
+    //            VG_(get_fnname)
+    //            (VG_(current_DiEpoch)(), current_state.VG_INSTR_PTR, &fnname);
+    //            VG_(umsg)
+    //            ("Recording state for %p/%p (%s)\n", (void
+    //            *)current_state.VG_INSTR_PTR,
+    //             (void *)addr, fnname);
 
     current_state.VG_INSTR_PTR = addr;
 

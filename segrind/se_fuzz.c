@@ -53,19 +53,21 @@ static char rand_char(UInt *seed) {
 }
 
 /**
- * @brief Memset region with random character
+ * @brief Set region to be a random char. The thinking is that many functions
+ * take a size parameter, and this hopefully gets used as one. Also, pointer
+ * regions might be strings, so this will produce a single character string.
  * @param seed
  * @param Data
  * @param Size
  * @return
  */
-static Bool Memset_Random_Char(UInt *seed, UChar *Data, SizeT Size) {
+static Bool Set_Region_To_Rand_Char(UInt *seed, UChar *Data, SizeT Size) {
   if (Size <= 0) {
     return False;
   }
 
   VG_(memset)(Data, 0, Size);
-  VG_(memset)(Data, rand_char(seed), Size);
+  *(char *)Data = rand_char(seed);
   return True;
 }
 
@@ -227,7 +229,7 @@ void SE_(fuzz_region)(UInt *seed, Addr start, Addr end) {
 
   Bool (*funcs[])(UInt *, UChar *, SizeT) = {
       ChangeBinaryInteger, Mutate_ChangeASCIIInteger, Mutate_ChangeBit,
-      Mutate_ChangeByte, Mutate_ShuffleBytes};
+      Mutate_ChangeByte,   Mutate_ShuffleBytes,       Set_Region_To_Rand_Char};
 
   UInt idx;
   //  UInt mutation_count = rand_uint(seed, sizeof(funcs) / sizeof(void *)) + 1;
