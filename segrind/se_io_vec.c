@@ -34,6 +34,16 @@ SE_(io_vec) * SE_(create_io_vec)(void) {
       VG_(newXA)(VG_(malloc), SE_IOVEC_MALLOC_TYPE, VG_(free),
                  sizeof(SE_(register_value)));
 
+  Int gpr_offsets[] = SE_O_GPRS;
+  for (Int i = 0; i < SE_NUM_GPRS; i++) {
+    Int current_offset = gpr_offsets[i];
+    SE_(register_value) new_val;
+    new_val.guest_state_offset = current_offset;
+    new_val.is_ptr = False;
+    new_val.value = 0;
+    VG_(addToXA)(io_vec->initial_state.register_state, &new_val);
+  }
+
   io_vec->expected_state =
       VG_(newRangeMap)(VG_(malloc), SE_IOVEC_MALLOC_TYPE, VG_(free), 0);
 

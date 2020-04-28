@@ -343,6 +343,8 @@ static Addr get_IRSB_start(IRSB *irsb) {
 static void fix_address_space(Addr invalid_addr) {
   tl_assert(VG_(sizeXA)(program_states) > 0);
 
+  //  SE_(ppIOVec)(SE_(command_server)->current_io_vec);
+
   VexGuestArchState *current_state;
   VexArch guest_arch;
   VexArchInfo guest_arch_info;
@@ -752,7 +754,7 @@ static void jump_to_target_function(void) {
     SE_(report_failure_to_commander)();
   }
   //  VG_(umsg)("Done setting state\n");
-  //  SE_(ppIOVec)(SE_(command_server)->current_io_vec);
+  //    SE_(ppIOVec)(SE_(command_server)->current_io_vec);
 
   target_called = True;
   record_current_state(SE_(command_server)->target_func_addr);

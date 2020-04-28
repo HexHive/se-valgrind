@@ -299,7 +299,7 @@ static Bool fuzz_program_state(SE_(cmd_server) * server) {
   SE_(seed) = VG_(random)(&SE_(seed));
 
   //  fuzz_input_pointers(server->current_io_vec, &SE_(seed));
-  //  fuzz_registers(server->current_io_vec, &SE_(seed));
+  //    fuzz_registers(server->current_io_vec, &SE_(seed));
 
   //  VG_(memcpy)
   //  (&server->current_io_vec->initial_state.register_state.buf[VG_O_FRAME_PTR],
@@ -1255,6 +1255,8 @@ static Bool wait_for_child(SE_(cmd_server) * server) {
   tl_assert(server->running_pid > 0);
   tl_assert(server->current_state == SERVER_EXECUTING ||
             server->current_state == SERVER_GETTING_INIT_STATE);
+
+  //  SE_(ppIOVec)(server->current_io_vec);
 
   Bool should_fork = False;
   Int status;
