@@ -912,29 +912,31 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
     (&tainted_loc, (UChar *)new_alloc_msg->data + bytes_read,
      sizeof(tainted_loc));
     bytes_read += sizeof(tainted_loc);
-
-    //    if (tainted_loc.type == taint_addr || tainted_loc.type == taint_stack)
-    //    {
-    //      VG_(umsg)
-    //      ("Received tainted %s %p\n",
-    //       tainted_loc.type == taint_stack ? "stack address" : "address",
-    //       (void *)tainted_loc.location.addr);
-    //      AddrInfo a;
-    //      VG_(describe_addr)(VG_(current_DiEpoch)(),
-    //      tainted_loc.location.addr, &a);
-    //      VG_(pp_addrinfo)(tainted_loc.location.addr, &a);
-    //      VG_(clear_addrinfo)(&a);
-    //      VG_(umsg)("Faulting address = %p\n", (void
-    //      *)taint_info.faulting_address); VG_(umsg)
-    //      ("Faulting source = %p\n", (void
-    //      *)taint_info.taint_source.location.addr);
-    //    } else if (tainted_loc.type == taint_reg) {
-    //      VG_(umsg)("Received tainted register %d\n",
-    //      tainted_loc.location.offset); VG_(umsg)("Invalid addr: %p\n", (void
-    //      *)taint_info.faulting_address);
-    //    } else {
-    //      VG_(umsg)("Received invalid taint\n");
-    //    }
+    //
+    //        if (tainted_loc.type == taint_addr || tainted_loc.type ==
+    //        taint_stack)
+    //        {
+    //          VG_(umsg)
+    //          ("Received tainted %s %p\n",
+    //           tainted_loc.type == taint_stack ? "stack address" : "address",
+    //           (void *)tainted_loc.location.addr);
+    //          AddrInfo a;
+    //          VG_(describe_addr)(VG_(current_DiEpoch)(),
+    //          tainted_loc.location.addr, &a);
+    //          VG_(pp_addrinfo)(tainted_loc.location.addr, &a);
+    //          VG_(clear_addrinfo)(&a);
+    //          VG_(umsg)("Faulting address = %p\n", (void
+    //          *)taint_info.faulting_address); VG_(umsg)
+    //          ("Faulting source = %p\n", (void
+    //          *)taint_info.taint_source.location.addr);
+    //        } else if (tainted_loc.type == taint_reg) {
+    //          VG_(umsg)("Received tainted register %d\n",
+    //          tainted_loc.location.offset); VG_(umsg)("Invalid addr: %p\n",
+    //          (void
+    //          *)taint_info.faulting_address);
+    //        } else {
+    //          VG_(umsg)("Received invalid taint\n");
+    //        }
 
     switch (tainted_loc.type) {
     case taint_reg:
@@ -972,19 +974,17 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
           return False;
         }
 
-        if (!object_nearby(server, taint_info.faulting_address, &obj_start,
-                           &obj_end)) {
+        Addr ptr_loc = taint_info.taint_source.location.addr;
+        if (!object_nearby(server, ptr_loc, &obj_start, &obj_end)) {
           /* The address is waaaay invalid, so just fuzz again */
           VG_(umsg)
-          ("Faulting address %p way off\n",
-           (void *)taint_info.faulting_address);
+          ("Faulting source address %p way off\n", (void *)ptr_loc);
           return False;
-        }
-        //
-        //        VG_(umsg)
-        //        ("Object near %p found at %p\n", (void
-        //        *)taint_info.faulting_address,
-        //         (void *)obj_start);
+        } /*else {
+          VG_(umsg)
+          ("Object near %p found at %p\n", (void *)taint_info.faulting_address,
+           (void *)obj_start);
+        }*/
 
         if (!lookup_obj(server, (Addr)reg_val->value, &obj_start, &obj_end)) {
           VG_(umsg)
@@ -995,8 +995,7 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
 
         /* Allocate larger object and free existing object if needed, and
          * set sub-member as a pointer */
-        SizeT ptr_member_offset =
-            taint_info.taint_source.location.addr - obj_start;
+        SizeT ptr_member_offset = ptr_loc - obj_start;
         SizeT needed_size = ptr_member_offset + sizeof(Addr);
         if (!reallocate_obj(server, needed_size, obj_start, obj_end, &obj_start,
                             &obj_end, 0)) {
@@ -1026,9 +1025,10 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
           VG_(umsg)("Failed to allocate new object\n");
           return False;
         }
-        //        VG_(umsg)
-        //        ("Setting register %d to %p\n", tainted_loc.location.offset,
-        //         (void *)(obj_loc));
+        //                VG_(umsg)
+        //                ("Setting register %d to %p\n",
+        //                tainted_loc.location.offset,
+        //                 (void *)(obj_loc));
         reg_val->is_ptr = True;
         reg_val->value = obj_loc;
       }
@@ -1081,9 +1081,9 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
           VG_(umsg)("Failed to allocate object\n");
           return False;
         }
-        //        VG_(umsg)
-        //        ("Registered %p as an object\n", (void
-        //        *)tainted_loc.location.addr);
+        //                VG_(umsg)
+        //                ("Registered %p as an object\n", (void
+        //                *)tainted_loc.location.addr);
       } else {
         PtrdiffT offset = taint_info.taint_source.location.addr - obj_start;
         SizeT orig_size = obj_end - obj_start + 1;
@@ -1097,11 +1097,13 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
           new_size = obj_end - taint_info.taint_source.location.addr + 1;
         }
 
-        //        VG_(umsg)
-        //        ("Existing object found at [ %p -- %p ] at or near %p. "
-        //         "Reallocating to hold %lu bytes.\n",
-        //         (void *)obj_start, (void *)obj_end,
-        //         (void *)taint_info.taint_source.location.addr, new_size);
+        //                VG_(umsg)
+        //                ("Existing object found at [ %p -- %p ] at or near %p.
+        //                "
+        //                 "Reallocating to hold %lu bytes.\n",
+        //                 (void *)obj_start, (void *)obj_end,
+        //                 (void *)taint_info.taint_source.location.addr,
+        //                 new_size);
         Addr new_start, new_end;
         if (!reallocate_obj(server, new_size, obj_start, obj_end, &new_start,
                             &new_end, offset)) {
@@ -1124,9 +1126,10 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
         }
 
         set_pointer_submember(server, new_start, new_end, offset, sub_pointer);
-        //        VG_(umsg)
-        //        ("Subpointer at %p = 0x%0lx\n", (void *)(new_start + offset),
-        //         *(Addr *)(new_start + offset));
+        //                VG_(umsg)
+        //                ("Subpointer at %p = 0x%0lx\n", (void *)(new_start +
+        //                offset),
+        //                 *(Addr *)(new_start + offset));
       }
       break;
     default:
@@ -1486,11 +1489,11 @@ void SE_(start_server)(SE_(cmd_server) * server, ThreadId executor_tid) {
         if (SE_(fork_and_execute)(server)) {
           return;
         }
-      } /*else {
-        VG_(umsg)
-        ("Server NOT forking with status %s\n",
-         SE_(server_state_str)(server->current_state));
-      }*/
+      } /* else {
+         VG_(umsg)
+         ("Server NOT forking with status %s\n",
+          SE_(server_state_str)(server->current_state));
+       }*/
     } else if ((fds[0].revents & VKI_POLLHUP) == VKI_POLLHUP) {
       VG_(umsg)("Server write command pipe closed...\n");
       return;
@@ -1620,8 +1623,8 @@ const HChar *SE_(server_state_str)(SE_(cmd_server_state) state) {
 void SE_(stop_server)(SE_(cmd_server) * server) {
   tl_assert(server);
 
-  SE_(reset_server)(server);
   server->current_state = SERVER_EXIT;
+  SE_(reset_server)(server);
 }
 
 void SE_(free_server)(SE_(cmd_server) * server) {
@@ -1659,7 +1662,9 @@ void SE_(reset_server)(SE_(cmd_server) * server) {
     server->current_io_vec = NULL;
   }
 
-  SE_(set_server_state)(server, SERVER_WAIT_FOR_CMD);
+  if (server->current_state != SERVER_EXIT) {
+    SE_(set_server_state)(server, SERVER_WAIT_FOR_CMD);
+  }
 }
 
 OSet *SE_(read_coverage)(SE_(cmd_server) * server) {
