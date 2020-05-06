@@ -65,17 +65,20 @@ void VG_(bindRangeMap) ( RangeMap* rm,
    the key bounds.  Can never fail since the RangeMap covers the
    entire key space.  This is fast: O(log N) in the number of
    ranges. */
-void VG_(lookupRangeMap) ( /*OUT*/UWord* key_min, /*OUT*/UWord* key_max,
-                           /*OUT*/UWord* val, const RangeMap* rm, UWord key );
+void VG_(lookupRangeMap)(/*OUT*/ UWord *key_min, /*OUT*/ UWord *key_max,
+                         /*OUT*/ UWord *val, const RangeMap *rm, UWord key);
 
 /* How many elements are there in the map? */
-UInt VG_(sizeRangeMap) ( const RangeMap* rm );
+UInt VG_(sizeRangeMap)(const RangeMap *rm);
 
 /* Get the i'th component */
-void VG_(indexRangeMap) ( /*OUT*/UWord* key_min, /*OUT*/UWord* key_max,
-                          /*OUT*/UWord* val, const RangeMap* rm, Word ix );
+void VG_(indexRangeMap)(/*OUT*/ UWord *key_min, /*OUT*/ UWord *key_max,
+                        /*OUT*/ UWord *val, const RangeMap *rm, Word ix);
 
-#endif   // __PUB_TOOL_RANGEMAP_H
+/* Erases mappings from dest and copies the mappings from src into dest */
+void VG_(copyRangeMap)(RangeMap *dest, const RangeMap *src);
+
+#endif // __PUB_TOOL_RANGEMAP_H
 
 /*--------------------------------------------------------------------*/
 /*--- end                                      pub_tool_rangemap.h ---*/

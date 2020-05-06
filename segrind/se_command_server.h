@@ -57,6 +57,7 @@ typedef struct {
   Addr initial_stack_ptr;
   Addr min_stack_ptr;
   OSet *coverage;
+  VexArch host_arch;
   SE_(io_vec) * current_io_vec;
 } SE_(cmd_server);
 

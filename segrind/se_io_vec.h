@@ -133,4 +133,14 @@ Bool SE_(current_state_matches_expected)(SE_(io_vec) * io_vec,
 Bool SE_(return_values_same)(SE_(return_value) * rv_1,
                              SE_(return_value) * rv_2);
 
+/**
+ * @brief Translates an IOVec from its originating architecture to the current
+ * host architecture
+ * @param original
+ * @param host_io_vec
+ * @return True on success, False otherwise
+ */
+Bool SE_(translate_io_vec_to_host)(SE_(io_vec) * original,
+                                   SE_(io_vec) * host_io_vec);
+
 #endif // SE_VALGRIND_SE_IO_VEC_H

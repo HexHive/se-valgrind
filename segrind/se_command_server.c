@@ -408,8 +408,21 @@ static Bool handle_set_io_vec(SE_(cmd_server) * server,
     }
     SE_(free_io_vec)(server->current_io_vec);
   }
-  server->current_io_vec =
+
+  SE_(io_vec) *new_io_vec =
       SE_(read_io_vec_from_buf)(cmd_msg->length, (UChar *)cmd_msg->data);
+  if (new_io_vec->host_arch == server->host_arch) {
+    server->current_io_vec = new_io_vec;
+  } else {
+    server->current_io_vec = SE_(create_io_vec)();
+    Bool translation_succeeded =
+        SE_(translate_io_vec_to_host)(new_io_vec, server->current_io_vec);
+    SE_(free_io_vec)(new_io_vec);
+    if (!translation_succeeded) {
+      VG_(umsg)("Failed to translate IOVec to host architecture");
+      return False;
+    }
+  }
 
   //  SE_(ppIOVec)(server->current_io_vec);
   //  UInt seed = server->current_io_vec->random_seed;
@@ -1367,6 +1380,9 @@ SE_(cmd_server) * SE_(make_server)(Int commander_r_fd, Int commander_w_fd) {
   cmd_server->current_state = SERVER_WAIT_FOR_START;
   cmd_server->initial_frame_ptr = -1;
   cmd_server->initial_stack_ptr = -1;
+
+  VexArchInfo arch_info;
+  VG_(machine_get_VexArchInfo)(&cmd_server->host_arch, &arch_info);
 
   return cmd_server;
 }

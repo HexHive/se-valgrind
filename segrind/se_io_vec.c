@@ -578,3 +578,82 @@ Bool SE_(return_values_same)(SE_(return_value) * rv_1,
 
   return True;
 }
+
+Bool SE_(translate_io_vec_to_host)(SE_(io_vec) * original,
+                                   SE_(io_vec) * host_io_vec) {
+  tl_assert(original);
+  tl_assert(host_io_vec);
+
+  if (original == host_io_vec) {
+    return True;
+  }
+
+  Word reg_count;
+  UWord val;
+
+  host_io_vec->random_seed = original->random_seed;
+  Word host_register_count =
+      VG_(sizeXA)(host_io_vec->initial_state.register_state);
+  Word original_register_count =
+      VG_(sizeXA)(original->initial_state.register_state);
+  if (original_register_count > host_register_count) {
+    VG_(umsg)
+    ("WARNING: Original IOVec contains more register values than the "
+     "current host uses for argument passing");
+    reg_count = host_register_count;
+  } else {
+    reg_count = original_register_count;
+  }
+
+  for (Word i = 0; i < reg_count; i++) {
+    SE_(register_value) *orig_reg_val = (SE_(register_value) *)VG_(indexXA)(
+        original->initial_state.register_state, i);
+    SE_(register_value) *host_reg_val = (SE_(register_value) *)VG_(indexXA)(
+        host_io_vec->initial_state.register_state, i);
+    host_reg_val->value = orig_reg_val->value;
+    host_reg_val->is_ptr = orig_reg_val->is_ptr;
+  }
+
+  if (!host_io_vec->initial_state.address_state) {
+    host_io_vec->initial_state.address_state =
+        VG_(newRangeMap)(VG_(malloc), SE_IOVEC_MALLOC_TYPE, VG_(free), 0);
+  }
+  VG_(copyRangeMap)
+  (host_io_vec->initial_state.address_state,
+   original->initial_state.address_state);
+
+  if (!host_io_vec->initial_state.pointer_member_locations) {
+    host_io_vec->initial_state.pointer_member_locations =
+        VG_(newRangeMap)(VG_(malloc), SE_IOVEC_MALLOC_TYPE, VG_(free), 0);
+  }
+  VG_(copyRangeMap)
+  (host_io_vec->initial_state.pointer_member_locations,
+   original->initial_state.pointer_member_locations);
+
+  if (!host_io_vec->expected_state) {
+    host_io_vec->expected_state =
+        VG_(newRangeMap)(VG_(malloc), SE_IOVEC_MALLOC_TYPE, VG_(free), 0);
+  }
+  VG_(copyRangeMap)(host_io_vec->expected_state, original->expected_state);
+
+  if (host_io_vec->return_value.value.buf) {
+    VG_(free)(host_io_vec->return_value.value.buf);
+  }
+  host_io_vec->return_value.value.buf =
+      VG_(malloc)(SE_IOVEC_MALLOC_TYPE, original->return_value.value.len);
+  host_io_vec->return_value.value.type = original->return_value.value.type;
+  host_io_vec->return_value.value.len = original->return_value.value.len;
+  host_io_vec->return_value.is_ptr = original->return_value.is_ptr;
+
+  VG_(OSetWord_ResetIter)(original->system_calls);
+  if (host_io_vec->system_calls) {
+    VG_(OSetWord_Destroy)(host_io_vec->system_calls);
+  }
+  host_io_vec->system_calls =
+      VG_(OSetWord_Create)(VG_(malloc), SE_IOVEC_MALLOC_TYPE, VG_(free));
+  while (VG_(OSetWord_Next)(original->system_calls, &val)) {
+    VG_(OSetWord_Insert)(host_io_vec->system_calls, val);
+  }
+
+  return True;
+}

@@ -129,26 +129,41 @@ UInt VG_(sizeRangeMap) ( const RangeMap* rm )
    return size;
 }
 
-void VG_(indexRangeMap) ( /*OUT*/UWord* key_min, /*OUT*/UWord* key_max,
-                          /*OUT*/UWord* val, const RangeMap* rm, Word ix )
-{
-   vg_assert(rm && rm->ranges);
-   Range* rng = (Range*)VG_(indexXA)(rm->ranges, ix);
-   *key_min = rng->key_min;
-   *key_max = rng->key_max;
-   *val     = rng->val;
+void VG_(indexRangeMap)(/*OUT*/ UWord *key_min, /*OUT*/ UWord *key_max,
+                        /*OUT*/ UWord *val, const RangeMap *rm, Word ix) {
+  vg_assert(rm && rm->ranges);
+  Range *rng = (Range *)VG_(indexXA)(rm->ranges, ix);
+  *key_min = rng->key_min;
+  *key_max = rng->key_max;
+  *val = rng->val;
+}
+
+void VG_(copyRangeMap)(RangeMap *dest, const RangeMap *src) {
+  vg_assert(dest);
+  vg_assert(src);
+
+  UWord min, max, val;
+  UInt size = VG_(sizeRangeMap)(src);
+
+  min = UWORD_MIN;
+  max = UWORD_MAX;
+  VG_(bindRangeMap)(dest, min, max, 0);
+
+  for (UInt i = 0; i < size; i++) {
+    VG_(indexRangeMap)(&min, &max, &val, src, i);
+    VG_(bindRangeMap)(dest, min, max, val);
+  }
 }
 
 /* Helper functions, not externally visible. */
 
-static void preen (/*MOD*/RangeMap* rm)
-{
-   Word    i;
-   XArray* ranges = rm->ranges;
-   for (i = 0; i < VG_(sizeXA)(ranges) - 1; i++) {
-      Range* rng0 = VG_(indexXA)(ranges, i+0);
-      Range* rng1 = VG_(indexXA)(ranges, i+1);
-      if (rng0->val != rng1->val)
+static void preen(/*MOD*/ RangeMap *rm) {
+  Word i;
+  XArray *ranges = rm->ranges;
+  for (i = 0; i < VG_(sizeXA)(ranges) - 1; i++) {
+    Range *rng0 = VG_(indexXA)(ranges, i + 0);
+    Range *rng1 = VG_(indexXA)(ranges, i + 1);
+    if (rng0->val != rng1->val)
          continue;
       rng0->key_max = rng1->key_max;
       VG_(removeIndexXA)(ranges, i+1);
