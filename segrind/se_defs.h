@@ -94,7 +94,7 @@ extern void vexSetAllocModeTEMP_and_clear(void);
 #define SE_offB_GUEST_IP offsetof(VexGuestARM64State, guest_PC)
 #define SE_szB_GUEST_IP sizeof(((VexGuestARM64State *)0)->guest_PC)
 #define SE_GUEST_WORD_TYPE Ity_I64
-#define SE_offB_RET offsetof(VexGuestX86State, guest_X0)
+#define SE_offB_RET offsetof(VexGuestARM64State, guest_X0)
 #define SE_O_GPRS                                                              \
   {                                                                            \
     offsetof(VexGuestArchState, guest_X0),                                     \
@@ -102,9 +102,9 @@ extern void vexSetAllocModeTEMP_and_clear(void);
         offsetof(VexGuestArchState, guest_X2),                                 \
         offsetof(VexGuestArchState, guest_X3),                                 \
         offsetof(VexGuestArchState, guest_X4),                                 \
-        offsetof(VexGuestArchState, guest_X5)                                  \
-            offsetof(VexGuestArchState, guest_X6)                              \
-                offsetof(VexGuestArchState, guest_X7)                          \
+        offsetof(VexGuestArchState, guest_X5),                                 \
+        offsetof(VexGuestArchState, guest_X6),                                 \
+        offsetof(VexGuestArchState, guest_X7)                                  \
   }
 #define SE_NUM_GPRS 8
 

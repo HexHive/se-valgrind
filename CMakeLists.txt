@@ -6,6 +6,10 @@ set(VALGRIND_TOOL_DIR ${CMAKE_CURRENT_SOURCE_DIR}/${VALGRIND_TOOL_NAME})
 set(VALGRIND_INSTALL_DIR ${CMAKE_CURRENT_BINARY_DIR}/install)
 set(VALGRIND_BUILD_DIR ${CMAKE_CURRENT_BINARY_DIR}/build)
 
+if ("${SE_ARCH}" STREQUAL AArch64)
+    set(SE_ARCH_CONFIG_FLAGS --host=aarch64-unknown-linux --enable-only64bit)
+endif ("${SE_ARCH}" STREQUAL AArch64)
+
 include_directories(include/
         VEX/pub/
         )
@@ -50,7 +54,7 @@ add_custom_target(
         DEPENDS ${VALGRIND_BUILD_DIR}
         BYPRODUCTS ${VALGRIND_BUILD_DIR}/Makefile
         COMMAND cd ${CMAKE_CURRENT_SOURCE_DIR} && bash ${CMAKE_CURRENT_SOURCE_DIR}/autogen.sh
-        COMMAND cd ${VALGRIND_BUILD_DIR} && ${CMAKE_CURRENT_SOURCE_DIR}/configure --prefix=${VALGRIND_INSTALL_DIR} --srcdir=${CMAKE_CURRENT_SOURCE_DIR}
+        COMMAND cd ${VALGRIND_BUILD_DIR} && ${CMAKE_CURRENT_SOURCE_DIR}/configure --prefix=${VALGRIND_INSTALL_DIR} --srcdir=${CMAKE_CURRENT_SOURCE_DIR} ${SE_ARCH_CONFIG_FLAGS}
 )
 
 add_custom_target(
