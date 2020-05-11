@@ -11,6 +11,10 @@
 /**
  * @brief Architecture specific macros. The offB* and szB_GUEST_IP are from
  * VEX/priv/main_main.c
+ *
+ * It is important that the order of registers follows the order used when
+ * passing function arguments, since the IOVec translation code assumes this to
+ * be the case.
  */
 
 extern void vexSetAllocModeTEMP_and_clear(void);

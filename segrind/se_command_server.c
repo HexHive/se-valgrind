@@ -8,6 +8,7 @@
 #include "se_utils.h"
 
 #include "pub_tool_addrinfo.h"
+#include "pub_tool_clientstate.h"
 #include "pub_tool_guest.h"
 #include "pub_tool_libcproc.h"
 #include "pub_tool_libcsignal.h"
@@ -1284,6 +1285,7 @@ static Bool wait_for_child(SE_(cmd_server) * server) {
   //  ("Waiting for child process %d for %u ms\n", server->running_pid,
   //   SE_(MaxDuration));
   fds[0].revents = 0;
+  VG_(umsg)("Waiting for at most %u ms\n", SE_(MaxDuration));
   SysRes result =
       VG_(poll)(fds, sizeof(fds) / sizeof(struct vki_pollfd), SE_(MaxDuration));
   if (sr_isError(result)) {
@@ -1380,6 +1382,12 @@ SE_(cmd_server) * SE_(make_server)(Int commander_r_fd, Int commander_w_fd) {
   cmd_server->current_state = SERVER_WAIT_FOR_START;
   cmd_server->initial_frame_ptr = -1;
   cmd_server->initial_stack_ptr = -1;
+  const HChar *exe_name = VG_(args_the_exename);
+  cmd_server->guest_is_shared_library =
+      (VG_(strcmp)(exe_name + VG_(strlen)(exe_name) - 3, ".so") == 0);
+  if (cmd_server->guest_is_shared_library) {
+    VG_(umsg)("Target %s is a shared library\n", exe_name);
+  }
 
   VexArchInfo arch_info;
   VG_(machine_get_VexArchInfo)(&cmd_server->host_arch, &arch_info);
@@ -1461,18 +1469,21 @@ void SE_(start_server)(SE_(cmd_server) * server, ThreadId executor_tid) {
   server->executor_tid = executor_tid;
 
   SymAVMAs symAvma;
-  VG_(umsg)("Looking for function main\n");
-  if (VG_(lookup_symbol_SLOW)(VG_(current_DiEpoch()), "*", "main", &symAvma)) {
-    VG_(umsg)("Found main at 0x%lx\n", symAvma.main);
-    if (SE_(user_main) > 0 && SE_(user_main) != symAvma.main) {
-      VG_(umsg)
-      ("WARNING: User specified main (0x%lx) is different from Valgrind "
-       "found "
-       "main (0x%lx)! Using user specified main...",
-       SE_(user_main), symAvma.main);
-      server->main_addr = SE_(user_main);
-    } else {
-      server->main_addr = symAvma.main;
+  if (!server->guest_is_shared_library) {
+    VG_(umsg)("Looking for function main\n");
+    if (VG_(lookup_symbol_SLOW)(VG_(current_DiEpoch()), "*", "main",
+                                &symAvma)) {
+      VG_(umsg)("Found main at 0x%lx\n", symAvma.main);
+      if (SE_(user_main) > 0 && SE_(user_main) != symAvma.main) {
+        VG_(umsg)
+        ("WARNING: User specified main (0x%lx) is different from Valgrind "
+         "found "
+         "main (0x%lx)! Using user specified main...",
+         SE_(user_main), symAvma.main);
+        server->main_addr = SE_(user_main);
+      } else {
+        server->main_addr = symAvma.main;
+      }
     }
   }
 

@@ -51,6 +51,7 @@ typedef struct {
   Bool using_fuzzed_io_vec;
   Bool using_existing_io_vec;
   Bool added_client_code_offset;
+  Bool guest_is_shared_library;
   ThreadId executor_tid;
   UInt attempt_count;
   Addr initial_frame_ptr;

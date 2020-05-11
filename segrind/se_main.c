@@ -44,7 +44,7 @@
 #include "pub_tool_stacktrace.h"
 #include "pub_tool_xarray.h"
 
-//#include "../coregrind/pub_core_scheduler.h"
+#include "../coregrind/pub_core_clientstate.h"
 
 /**
  * @brief Is the guest executing code?
@@ -599,12 +599,24 @@ static void SE_(thread_creation)(ThreadId tid, ThreadId child) {
     VG_(set_call_fault_catcher_in_generated)(True);
     SE_(enable_global_memory_permissions)(SE_(command_server));
 
+    if (SE_(command_server)->guest_is_shared_library) {
+      VG_(set_shadow_regs_area)
+      (target_id, 0, SE_offB_GUEST_IP, SE_szB_GUEST_IP,
+       (UChar *)&SE_(command_server)->target_func_addr);
+      VG_(set_SP)(target_id, VG_(get_initial_client_SP)());
+      VG_(umsg)
+      ("Set IP to shared library address %p\n",
+       (void *)(SE_(command_server->target_func_addr)));
+      main_replaced = True;
+      client_running = True;
+    }
+
     const HChar *fnname;
     VG_(get_fnname)
     (VG_(current_DiEpoch)(), SE_(command_server)->target_func_addr, &fnname);
     target_name = VG_(strdup)(SE_TOOL_ALLOC_STR, fnname);
-    tl_assert(VG_(strlen)(target_name) > 0);
-    //        VG_(umsg)("Executing %s\n", target_name);
+    //    tl_assert(VG_(strlen)(target_name) > 0);
+    //            VG_(umsg)("Executing %s\n", target_name);
     //    SE_(ppIOVec)(SE_(command_server)->current_io_vec);
   }
 }
@@ -693,13 +705,13 @@ static void record_current_state(Addr addr) {
     VG_(get_shadow_regs_area)
     (target_id, (UChar *)&current_state, 0, 0, sizeof(current_state));
 
-    //                const HChar *fnname;
-    //                VG_(get_fnname)
-    //                (VG_(current_DiEpoch)(), current_state.VG_INSTR_PTR,
-    //                &fnname); VG_(umsg)
-    //                ("Recording state for %p/%p (%s)\n", (void
-    //                *)current_state.VG_INSTR_PTR,
-    //                 (void *)addr, fnname);
+    //                    const HChar *fnname;
+    //                    VG_(get_fnname)
+    //                    (VG_(current_DiEpoch)(), current_state.VG_INSTR_PTR,
+    //                    &fnname); VG_(umsg)
+    //                    ("Recording state for %p/%p (%s)\n", (void
+    //                    *)current_state.VG_INSTR_PTR,
+    //                     (void *)addr, fnname);
 
     current_state.VG_INSTR_PTR = addr;
 
@@ -769,6 +781,7 @@ static void jump_to_target_function(void) {
 static void SE_(start_client_code)(ThreadId tid, ULong blocks_dispatched) {
   if (!client_running && tid == target_id) {
     client_running = True;
+    VG_(umsg)("Client is now running\n");
   }
 
   if (!main_replaced &&
@@ -1023,11 +1036,12 @@ static IRSB *SE_(instrument)(VgCallbackClosure *closure, IRSB *bb,
                              IRType hWordTy) {
   IRSB *bbOut = bb;
 
-  //    VG_(umsg)("Instrumenting code\n");
+  //      VG_(umsg)("Instrumenting code\n");
   if (client_running && main_replaced) {
     bbOut = SE_(instrument_target)(bb, gWordTy);
-    //                    ppIRSB(bbOut);
+    //                        ppIRSB(bbOut);
   } else if (client_running && !main_replaced && !target_called) {
+    //    ppIRSB(bbOut);
     bbOut = SE_(replace_main_reference)(bb);
   }
 
