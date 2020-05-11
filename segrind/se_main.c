@@ -97,6 +97,8 @@ static void fix_address_space(Addr);
 static IRDirty *make_call_to_record_current_state(Addr, IRType);
 static IRDirty *make_call_to_jump_to_target(void);
 static IRDirty *make_call_to_report_success(void);
+static Bool is_last_IMark(Int idx, Int max, IRStmt **stmts);
+static Bool is_call_target_main(Addr call_target);
 
 /**
  * @brief Creates and sends a message to the command server
@@ -974,6 +976,15 @@ static IRSB *SE_(instrument_target)(IRSB *bb, IRType gWordType) {
   return bbOut;
 }
 
+static Bool is_call_target_main(Addr call_target) {
+  VG_(umsg)("call_target = %p\n", (void *)call_target);
+  Bool result = call_target == SE_(command_server)->main_addr;
+  if (result) {
+    main_replaced = True;
+  }
+  return result;
+}
+
 /**
  * @brief The address of main is expected to be a constant, so search for
  * a IRConst containing the address of main.  This currently assumes that
@@ -993,29 +1004,28 @@ static IRSB *SE_(replace_main_reference)(IRSB *bb) {
   IRExpr *expr;
 
   bbOut = deepCopyIRSBExceptStmts(bb);
+  //  IRConst *target32 =
+  //  IRConst_U32((UInt)SE_(command_server)->target_func_addr);
+  IRConst *target64 = IRConst_U64((ULong)SE_(command_server)->target_func_addr);
+
+  Bool on_last_imark = False;
 
   for (i = 0; i < bb->stmts_used; i++) {
     IRStmt *stmt = bb->stmts[i];
     switch (stmt->tag) {
+    case Ist_IMark:
+      on_last_imark = is_last_IMark(i, bb->stmts_used, bb->stmts);
+      addStmtToIRSB(bbOut, stmt);
+      break;
     case Ist_Put:
-      expr = stmt->Ist.Put.data;
-      if (expr->tag == Iex_Const) {
-        IRConst *irConst = expr->Iex.Const.con;
-        if (irConst->tag == Ico_U64 &&
-            irConst->Ico.U64 == SE_(command_server)->main_addr) {
-          irConst = IRConst_U64((ULong)SE_(command_server)->target_func_addr);
-          expr = IRExpr_Const(irConst);
-          addStmtToIRSB(bbOut, IRStmt_Put(stmt->Ist.Put.offset, expr));
-          main_replaced = True;
-        } else if (irConst->tag == Ico_U32 &&
-                   irConst->Ico.U32 == SE_(command_server)->main_addr) {
-          irConst = IRConst_U32((UInt)SE_(command_server)->target_func_addr);
-          expr = IRExpr_Const(irConst);
-          addStmtToIRSB(bbOut, IRStmt_Put(stmt->Ist.Put.offset, expr));
-          main_replaced = True;
-        } else {
-          addStmtToIRSB(bbOut, stmt);
-        }
+      if (on_last_imark && bb->jumpkind == Ijk_Call &&
+          stmt->Ist.Put.offset == VG_O_INSTR_PTR) {
+        IRExpr *check_target_call =
+            mkIRExprCCall(Ity_I1, 1, "is_call_target_main", is_call_target_main,
+                          mkIRExprVec_1(stmt->Ist.Put.data));
+        IRExpr *target_expr = IRExpr_Const(target64);
+        expr = IRExpr_ITE(check_target_call, target_expr, stmt->Ist.Put.data);
+        addStmtToIRSB(bbOut, IRStmt_Put(stmt->Ist.Put.offset, expr));
       } else {
         addStmtToIRSB(bbOut, stmt);
       }
@@ -1041,7 +1051,7 @@ static IRSB *SE_(instrument)(VgCallbackClosure *closure, IRSB *bb,
     bbOut = SE_(instrument_target)(bb, gWordTy);
     //                        ppIRSB(bbOut);
   } else if (client_running && !main_replaced && !target_called) {
-    //    ppIRSB(bbOut);
+    ppIRSB(bbOut);
     bbOut = SE_(replace_main_reference)(bb);
   }
 
