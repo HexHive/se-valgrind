@@ -1546,7 +1546,8 @@ Bool SE_(is_valid_transition)(const SE_(cmd_server) * server,
   case SERVER_GETTING_INIT_STATE:
     return (next_state == SERVER_WAIT_FOR_CMD);
   case SERVER_WAIT_FOR_CMD:
-    return (next_state == SERVER_FUZZING || next_state == SERVER_SETTING_CTX);
+    return (next_state == SERVER_FUZZING || next_state == SERVER_SETTING_CTX ||
+            next_state == SERVER_GETTING_INIT_STATE);
   case SERVER_FUZZING:
   case SERVER_SETTING_CTX:
     return (next_state == SERVER_WAIT_FOR_CMD ||
