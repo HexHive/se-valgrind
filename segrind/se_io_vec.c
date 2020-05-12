@@ -599,7 +599,7 @@ Bool SE_(translate_io_vec_to_host)(SE_(io_vec) * original,
   if (original_register_count > host_register_count) {
     VG_(umsg)
     ("WARNING: Original IOVec contains more register values than the "
-     "current host uses for argument passing");
+     "current host uses for argument passing\n");
     reg_count = host_register_count;
   } else {
     reg_count = original_register_count;
