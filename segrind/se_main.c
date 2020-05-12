@@ -1023,16 +1023,17 @@ static IRSB *SE_(replace_main_reference)(IRSB *bb) {
 
   for (i = 0; i < bb->stmts_used; i++) {
     if (i == bb->stmts_used - 1) {
+      // FIXME: Use 32-bit numbers on 32-bit machines
       IRExpr *get_expr = bbOut->next;
       IRTemp ip_temp = newIRTemp(bbOut->tyenv, Ity_I64);
       addStmtToIRSB(bbOut, IRStmt_WrTmp(ip_temp, get_expr));
       IRExpr *check_target_call =
-          mkIRExprCCall(Ity_I32, 1, "is_call_target_main", is_call_target_main,
+          mkIRExprCCall(Ity_I64, 1, "is_call_target_main", is_call_target_main,
                         mkIRExprVec_1(IRExpr_RdTmp(ip_temp)));
-      IRTemp check_temp = newIRTemp(bbOut->tyenv, Ity_I32);
+      IRTemp check_temp = newIRTemp(bbOut->tyenv, Ity_I64);
       addStmtToIRSB(bbOut, IRStmt_WrTmp(check_temp, check_target_call));
       IRTemp check_result = newIRTemp(bbOut->tyenv, Ity_I1);
-      IRExpr *result_cast = IRExpr_Unop(Iop_32to1, IRExpr_RdTmp(check_temp));
+      IRExpr *result_cast = IRExpr_Unop(Iop_64to1, IRExpr_RdTmp(check_temp));
       stmt = IRStmt_WrTmp(check_result, result_cast);
       addStmtToIRSB(bbOut, stmt);
       IRExpr *target_expr = IRExpr_Const(target64);
