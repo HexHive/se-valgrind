@@ -196,15 +196,15 @@ static void fuzz_input_pointers(SE_(io_vec) * io_vec, UInt *seed) {
 
   UInt size = VG_(sizeRangeMap)(io_vec->initial_state.address_state);
   Addr obj_start = 0;
-  //  VG_(umsg)("Fuzzing allocated areas with seed %u\n", *seed);
+  //    VG_(umsg)("Fuzzing allocated areas with seed %u\n", *seed);
   for (Word i = 0; i < size; i++) {
     UWord key_min, key_max, val;
     VG_(indexRangeMap)
     (&key_min, &key_max, &val, io_vec->initial_state.address_state, i);
 
-    //    VG_(umsg)
-    //    ("\t[0x%lx - 0x%lx] = %lu %lu\n", key_min, key_max, val,
-    //     val & OBJ_END_MAGIC);
+    //        VG_(umsg)
+    //        ("\t[0x%lx - 0x%lx] = %lu %lu\n", key_min, key_max, val,
+    //         val & OBJ_END_MAGIC);
 
     if (val & OBJ_START_MAGIC) {
       obj_start = (Addr)key_min;
@@ -231,9 +231,9 @@ static void fuzz_input_pointers(SE_(io_vec) * io_vec, UInt *seed) {
     if (val > 0) {
       tl_assert(sizeof(val) >= (addr_max - addr_min));
       VG_(memcpy)((void *)addr_min, &val, addr_max - addr_min + 1);
-      //      VG_(umsg)
-      //      ("Set %p to 0x%0lx and should be 0x%lx\n", (void *)addr_min,
-      //       *(Addr *)(addr_min), val);
+      //            VG_(umsg)
+      //            ("Set %p to 0x%0lx and should be 0x%lx\n", (void *)addr_min,
+      //             *(Addr *)(addr_min), val);
     }
   }
 }
@@ -316,7 +316,7 @@ Bool SE_(establish_memory_state)(SE_(cmd_server) * server) {
   UInt size;
   UWord obj_min_addr = 0, obj_max_addr = 0;
 
-  //  VG_(umsg)("Establishing memory state\n");
+  //    VG_(umsg)("Establishing memory state\n");
   size = VG_(sizeRangeMap)(server->current_io_vec->initial_state.address_state);
   for (UInt i = 0; i < size; i++) {
     UWord addr_min, addr_max, val;
@@ -333,8 +333,8 @@ Bool SE_(establish_memory_state)(SE_(cmd_server) * server) {
                                        VKI_PROT_READ | VKI_PROT_WRITE)) {
         Addr addr = VG_PGROUNDDN(obj_min_addr);
         SizeT alloc_size = obj_max_addr - addr;
-        //        VG_(umsg)
-        //        ("Mapping %p into client space\n", (void *)addr);
+        //                VG_(umsg)
+        //                ("Mapping %p into client space\n", (void *)addr);
         SysRes res = VG_(am_mmap_anon_fixed_client)(
             addr, alloc_size, VKI_PROT_READ | VKI_PROT_WRITE);
         if (sr_isError(res)) {
@@ -927,30 +927,28 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
      sizeof(tainted_loc));
     bytes_read += sizeof(tainted_loc);
     //
-    //        if (tainted_loc.type == taint_addr || tainted_loc.type ==
-    //        taint_stack)
-    //        {
-    //          VG_(umsg)
-    //          ("Received tainted %s %p\n",
-    //           tainted_loc.type == taint_stack ? "stack address" : "address",
-    //           (void *)tainted_loc.location.addr);
-    //          AddrInfo a;
-    //          VG_(describe_addr)(VG_(current_DiEpoch)(),
-    //          tainted_loc.location.addr, &a);
-    //          VG_(pp_addrinfo)(tainted_loc.location.addr, &a);
-    //          VG_(clear_addrinfo)(&a);
-    //          VG_(umsg)("Faulting address = %p\n", (void
-    //          *)taint_info.faulting_address); VG_(umsg)
-    //          ("Faulting source = %p\n", (void
-    //          *)taint_info.taint_source.location.addr);
-    //        } else if (tainted_loc.type == taint_reg) {
-    //          VG_(umsg)("Received tainted register %d\n",
-    //          tainted_loc.location.offset); VG_(umsg)("Invalid addr: %p\n",
-    //          (void
-    //          *)taint_info.faulting_address);
-    //        } else {
-    //          VG_(umsg)("Received invalid taint\n");
-    //        }
+    //    if (tainted_loc.type == taint_addr || tainted_loc.type == taint_stack)
+    //    {
+    //      VG_(umsg)
+    //      ("Received tainted %s %p\n",
+    //       tainted_loc.type == taint_stack ? "stack address" : "address",
+    //       (void *)tainted_loc.location.addr);
+    //      AddrInfo a;
+    //      VG_(describe_addr)(VG_(current_DiEpoch)(),
+    //      tainted_loc.location.addr, &a);
+    //      VG_(pp_addrinfo)(tainted_loc.location.addr, &a);
+    //      VG_(clear_addrinfo)(&a);
+    //      VG_(umsg)("Faulting address = %p\n", (void
+    //      *)taint_info.faulting_address); VG_(umsg)
+    //      ("Faulting source = %p\n", (void
+    //      *)taint_info.taint_source.location.addr);
+    //    } else if (tainted_loc.type == taint_reg) {
+    //      VG_(umsg)("Received tainted register %d\n",
+    //      tainted_loc.location.offset); VG_(umsg)("Invalid addr: %p\n", (void
+    //      *)taint_info.faulting_address);
+    //    } else {
+    //      VG_(umsg)("Received invalid taint\n");
+    //    }
 
     switch (tainted_loc.type) {
     case taint_reg:
@@ -991,8 +989,8 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
         Addr ptr_loc = taint_info.taint_source.location.addr;
         if (!object_nearby(server, ptr_loc, &obj_start, &obj_end)) {
           /* The address is waaaay invalid, so just fuzz again */
-          VG_(umsg)
-          ("Faulting source address %p way off\n", (void *)ptr_loc);
+          //          VG_(umsg)
+          //          ("Faulting source address %p way off\n", (void *)ptr_loc);
           return False;
         } /*else {
           VG_(umsg)
@@ -1039,10 +1037,9 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
           VG_(umsg)("Failed to allocate new object\n");
           return False;
         }
-        //                VG_(umsg)
-        //                ("Setting register %d to %p\n",
-        //                tainted_loc.location.offset,
-        //                 (void *)(obj_loc));
+        //        VG_(umsg)
+        //        ("Setting register %d to %p\n", tainted_loc.location.offset,
+        //         (void *)(obj_loc));
         reg_val->is_ptr = True;
         reg_val->value = obj_loc;
       }
@@ -1095,9 +1092,9 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
           VG_(umsg)("Failed to allocate object\n");
           return False;
         }
-        //                VG_(umsg)
-        //                ("Registered %p as an object\n", (void
-        //                *)tainted_loc.location.addr);
+        //        VG_(umsg)
+        //        ("Registered %p as an object\n", (void
+        //        *)tainted_loc.location.addr);
       } else {
         PtrdiffT offset = taint_info.taint_source.location.addr - obj_start;
         SizeT orig_size = obj_end - obj_start + 1;
@@ -1111,13 +1108,11 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
           new_size = obj_end - taint_info.taint_source.location.addr + 1;
         }
 
-        //                VG_(umsg)
-        //                ("Existing object found at [ %p -- %p ] at or near %p.
-        //                "
-        //                 "Reallocating to hold %lu bytes.\n",
-        //                 (void *)obj_start, (void *)obj_end,
-        //                 (void *)taint_info.taint_source.location.addr,
-        //                 new_size);
+        //        VG_(umsg)
+        //        ("Existing object found at [ %p -- %p ] at or near %p.  "
+        //         "Reallocating to hold %lu bytes.\n",
+        //         (void *)obj_start, (void *)obj_end,
+        //         (void *)taint_info.taint_source.location.addr, new_size);
         Addr new_start, new_end;
         if (!reallocate_obj(server, new_size, obj_start, obj_end, &new_start,
                             &new_end, offset)) {
@@ -1140,10 +1135,9 @@ static Bool handle_new_alloc(SE_(cmd_server) * server,
         }
 
         set_pointer_submember(server, new_start, new_end, offset, sub_pointer);
-        //                VG_(umsg)
-        //                ("Subpointer at %p = 0x%0lx\n", (void *)(new_start +
-        //                offset),
-        //                 *(Addr *)(new_start + offset));
+        //                        VG_(umsg)
+        //        ("Subpointer at %p = 0x%0lx\n", (void *)(new_start + offset),
+        //         *(Addr *)(new_start + offset));
       }
       break;
     default:
@@ -1285,7 +1279,7 @@ static Bool wait_for_child(SE_(cmd_server) * server) {
   //  ("Waiting for child process %d for %u ms\n", server->running_pid,
   //   SE_(MaxDuration));
   fds[0].revents = 0;
-  VG_(umsg)("Waiting for at most %u ms\n", SE_(MaxDuration));
+  //  VG_(umsg)("Waiting for at most %u ms\n", SE_(MaxDuration));
   SysRes result =
       VG_(poll)(fds, sizeof(fds) / sizeof(struct vki_pollfd), SE_(MaxDuration));
   if (sr_isError(result)) {

@@ -98,7 +98,7 @@ static IRDirty *make_call_to_record_current_state(Addr, IRType);
 static IRDirty *make_call_to_jump_to_target(void);
 static IRDirty *make_call_to_report_success(void);
 static Bool is_last_IMark(Int idx, Int max, IRStmt **stmts);
-static Bool is_call_target_main(Addr call_target);
+static Int is_call_target_main(Addr call_target);
 
 /**
  * @brief Creates and sends a message to the command server
@@ -427,8 +427,8 @@ static void fix_address_space(Addr invalid_addr) {
       Word orig_stmt_idx = stmt_idx;
       for (Int i = irsb->stmts_used - 1; i >= 0; i--) {
         IRStmt *stmt = irsb->stmts[i];
-        //                ppIRStmt(stmt);
-        //                VG_(printf)("\n");
+        //                        ppIRStmt(stmt);
+        //                        VG_(printf)("\n");
         Bool taint_found = SE_(taint_found)();
         switch (stmt->tag) {
         case Ist_IMark:
@@ -552,6 +552,9 @@ static void SE_(signal_handler)(Int sigNo, Addr addr) {
     if (sigNo == VKI_SIGSEGV && SE_(command_server)->using_fuzzed_io_vec) {
       fix_address_space(addr);
     } else {
+      VG_(umsg)
+      ("Signal handler called unexpectedly with signal %d and addr %p\n", sigNo,
+       (void *)addr);
       SE_(report_failure_to_commander)();
     }
     SE_(cleanup_and_exit)();
@@ -707,13 +710,13 @@ static void record_current_state(Addr addr) {
     VG_(get_shadow_regs_area)
     (target_id, (UChar *)&current_state, 0, 0, sizeof(current_state));
 
-    //                    const HChar *fnname;
-    //                    VG_(get_fnname)
-    //                    (VG_(current_DiEpoch)(), current_state.VG_INSTR_PTR,
-    //                    &fnname); VG_(umsg)
-    //                    ("Recording state for %p/%p (%s)\n", (void
-    //                    *)current_state.VG_INSTR_PTR,
-    //                     (void *)addr, fnname);
+    //                        const HChar *fnname;
+    //                        VG_(get_fnname)
+    //                        (VG_(current_DiEpoch)(),
+    //                        current_state.VG_INSTR_PTR, &fnname); VG_(umsg)
+    //                        ("Recording state for %p/%p (%s)\n", (void
+    //                        *)current_state.VG_INSTR_PTR,
+    //                         (void *)addr, fnname);
 
     current_state.VG_INSTR_PTR = addr;
 
@@ -755,7 +758,7 @@ static void jump_to_target_function(void) {
        i++) {
     SE_(register_value) *reg_val = VG_(indexXA)(
         SE_(command_server)->current_io_vec->initial_state.register_state, i);
-    //    VG_(umsg)
+    //        VG_(umsg)
     //    ("Setting register %d = 0x%lx\n", reg_val->guest_state_offset,
     //     reg_val->value);
     VG_(set_shadow_regs_area)
@@ -765,6 +768,7 @@ static void jump_to_target_function(void) {
 
   if (!SE_(remove_global_memory_permissions)(SE_(command_server)) ||
       !SE_(establish_memory_state)(SE_(command_server))) {
+    VG_(umsg)("Could not properly set memory state\n");
     SE_(report_failure_to_commander)();
   }
   //  VG_(umsg)("Done setting state\n");
@@ -783,11 +787,14 @@ static void jump_to_target_function(void) {
 static void SE_(start_client_code)(ThreadId tid, ULong blocks_dispatched) {
   if (!client_running && tid == target_id) {
     client_running = True;
-    VG_(umsg)("Client is now running\n");
+    //    VG_(umsg)("Client is now running\n");
   }
 
   if (!main_replaced &&
       VG_(get_IP)(target_id) == SE_(command_server)->main_addr) {
+    VG_(umsg)
+    ("Main (%p) called but not replaced\n",
+     (void *)SE_(command_server)->main_addr);
     SE_(report_failure_to_commander)();
   }
 }
@@ -976,13 +983,13 @@ static IRSB *SE_(instrument_target)(IRSB *bb, IRType gWordType) {
   return bbOut;
 }
 
-static Bool is_call_target_main(Addr call_target) {
-  VG_(umsg)("call_target = %p\n", (void *)call_target);
+static Int is_call_target_main(Addr call_target) {
+  //  VG_(umsg)("call_target = %p\n", (void *)call_target);
   Bool result = call_target == SE_(command_server)->main_addr;
   if (result) {
     main_replaced = True;
   }
-  return result;
+  return result ? 1 : 0;
 }
 
 /**
@@ -1002,39 +1009,45 @@ static IRSB *SE_(replace_main_reference)(IRSB *bb) {
   IRSB *bbOut;
   Int i;
   IRExpr *expr;
+  IRStmt *stmt;
+  IRTemp call_target_temp = IRTemp_INVALID;
+
+  if (bb->jumpkind != Ijk_Call) {
+    return bb;
+  }
 
   bbOut = deepCopyIRSBExceptStmts(bb);
   //  IRConst *target32 =
   //  IRConst_U32((UInt)SE_(command_server)->target_func_addr);
   IRConst *target64 = IRConst_U64((ULong)SE_(command_server)->target_func_addr);
 
-  Bool on_last_imark = False;
-
   for (i = 0; i < bb->stmts_used; i++) {
-    IRStmt *stmt = bb->stmts[i];
-    switch (stmt->tag) {
-    case Ist_IMark:
-      on_last_imark = is_last_IMark(i, bb->stmts_used, bb->stmts);
+    if (i == bb->stmts_used - 1) {
+      IRExpr *get_expr = bbOut->next;
+      IRTemp ip_temp = newIRTemp(bbOut->tyenv, Ity_I64);
+      addStmtToIRSB(bbOut, IRStmt_WrTmp(ip_temp, get_expr));
+      IRExpr *check_target_call =
+          mkIRExprCCall(Ity_I32, 1, "is_call_target_main", is_call_target_main,
+                        mkIRExprVec_1(IRExpr_RdTmp(ip_temp)));
+      IRTemp check_temp = newIRTemp(bbOut->tyenv, Ity_I32);
+      addStmtToIRSB(bbOut, IRStmt_WrTmp(check_temp, check_target_call));
+      IRTemp check_result = newIRTemp(bbOut->tyenv, Ity_I1);
+      IRExpr *result_cast = IRExpr_Unop(Iop_32to1, IRExpr_RdTmp(check_temp));
+      stmt = IRStmt_WrTmp(check_result, result_cast);
       addStmtToIRSB(bbOut, stmt);
-      break;
-    case Ist_Put:
-      if (on_last_imark && bb->jumpkind == Ijk_Call &&
-          stmt->Ist.Put.offset == VG_O_INSTR_PTR) {
-        IRExpr *check_target_call =
-            mkIRExprCCall(Ity_I1, 1, "is_call_target_main", is_call_target_main,
-                          mkIRExprVec_1(stmt->Ist.Put.data));
-        IRExpr *target_expr = IRExpr_Const(target64);
-        expr = IRExpr_ITE(check_target_call, target_expr, stmt->Ist.Put.data);
-        addStmtToIRSB(bbOut, IRStmt_Put(stmt->Ist.Put.offset, expr));
-      } else {
-        addStmtToIRSB(bbOut, stmt);
-      }
-      break;
-    default:
-      addStmtToIRSB(bbOut, stmt);
-      break;
+      IRExpr *target_expr = IRExpr_Const(target64);
+      expr = IRExpr_ITE(IRExpr_RdTmp(check_result), target_expr,
+                        IRExpr_RdTmp(ip_temp));
+      call_target_temp = newIRTemp(bbOut->tyenv, Ity_I64);
+
+      addStmtToIRSB(bbOut, IRStmt_WrTmp(call_target_temp, expr));
     }
+    stmt = bb->stmts[i];
+    addStmtToIRSB(bbOut, stmt);
   }
+
+  tl_assert(call_target_temp != IRTemp_INVALID);
+  bbOut->next = IRExpr_RdTmp(call_target_temp);
 
   return bbOut;
 }
@@ -1051,7 +1064,7 @@ static IRSB *SE_(instrument)(VgCallbackClosure *closure, IRSB *bb,
     bbOut = SE_(instrument_target)(bb, gWordTy);
     //                        ppIRSB(bbOut);
   } else if (client_running && !main_replaced && !target_called) {
-    ppIRSB(bbOut);
+    //    ppIRSB(bbOut);
     bbOut = SE_(replace_main_reference)(bb);
   }
 
