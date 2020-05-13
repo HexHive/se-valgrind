@@ -8,11 +8,13 @@
 int main(int argc, char **argv) {
   if (argc != 2) {
     fprintf(stderr, "Invalid arguments\n");
+    return -1;
   }
 
   void *handle = dlopen(argv[1], RTLD_NOW);
   if (!handle) {
     fprintf(stderr, "dlopen(%s) failed\n", argv[1]);
+    return -1;
   }
 
   VALGRIND_DO_CLIENT_REQUEST_STMT(SE_USERREQ_START_SERVER, 0, 0, 0, 0, 0);
