@@ -156,14 +156,19 @@ static Bool handle_set_so_target_cmd(SE_(cmd_msg) * msg,
   }
 
   SymAVMAs symAvma;
-  VG_(umsg)("Looking for shared library target %s\n", msg->data);
+  VG_(umsg)("Looking for shared library target %s\n", (char *)msg->data);
   if (VG_(lookup_symbol_SLOW)(VG_(current_DiEpoch()), "*", msg->data,
                               &symAvma)) {
-    VG_(umsg)("Found %s at %p\n", msg->data, (void *)symAvma.main);
+    VG_(umsg)("Found %s at %p\n", (char *)msg->data, (void *)symAvma.main);
     server->target_func_addr = symAvma.main;
-    return True;
+    server->added_client_code_offset = False;
+    if (server->current_io_vec) {
+      SE_(free_io_vec)(server->current_io_vec);
+    }
+    server->current_io_vec = SE_(create_io_vec)();
+    return SE_(set_server_state)(server, SERVER_WAIT_FOR_CMD);
   } else {
-    VG_(umsg)("Could not find %s\n", msg->data);
+    VG_(umsg)("Could not find %s\n", (char *)msg->data);
     return False;
   }
 }
@@ -488,6 +493,9 @@ static Bool handle_command(SE_(cmd_server) * server) {
     return False;
   }
   send_ack_to_commander(server);
+  //  VG_(umsg)
+  //  ("Received %s msg with %lu bytes\n", SE_(msg_type_str)(cmd_msg->msg_type),
+  //   cmd_msg->length);
 
   Bool parent_should_fork = False;
   Bool msg_handled = False;
@@ -1414,7 +1422,7 @@ SE_(cmd_server) * SE_(make_server)(Int commander_r_fd, Int commander_w_fd) {
   cmd_server->initial_stack_ptr = -1;
   const HChar *exe_name = VG_(args_the_exename);
   cmd_server->guest_is_shared_library =
-      (VG_(strstr)(exe_name, "segrind_so_loader") == 0);
+      (VG_(strstr)(exe_name, "segrind_so_loader") != 0);
   if (cmd_server->guest_is_shared_library) {
     VG_(umsg)("Target %s is a shared library\n", exe_name);
   }
@@ -1494,7 +1502,7 @@ void SE_(start_server)(SE_(cmd_server) * server, ThreadId executor_tid) {
   tl_assert(server);
   tl_assert(server->current_state == SERVER_WAIT_FOR_START);
   tl_assert(executor_tid != VG_INVALID_THREADID);
-  tl_assert(executor_tid != VG_(get_running_tid)());
+  //  tl_assert(executor_tid != VG_(get_running_tid)());
 
   server->executor_tid = executor_tid;
 
@@ -1572,7 +1580,8 @@ Bool SE_(is_valid_transition)(const SE_(cmd_server) * server,
   case SERVER_START:
     return (next_state == SERVER_WAIT_FOR_TARGET);
   case SERVER_WAIT_FOR_TARGET:
-    return (next_state == SERVER_GETTING_INIT_STATE);
+    return (next_state == SERVER_GETTING_INIT_STATE ||
+            next_state == SERVER_WAIT_FOR_CMD);
   case SERVER_GETTING_INIT_STATE:
     return (next_state == SERVER_WAIT_FOR_CMD);
   case SERVER_WAIT_FOR_CMD:

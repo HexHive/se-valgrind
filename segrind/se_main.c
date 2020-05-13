@@ -319,6 +319,8 @@ static Bool SE_(client_request_handler)(ThreadId tid, UWord *args, UWord *ret) {
     return False;
   }
 
+  VG_(umsg)("Handling request from Thread %d\n", tid);
+
   *ret = 0;
   switch (args[0]) {
   case SE_USERREQ_START_SERVER:
@@ -342,6 +344,7 @@ static Bool SE_(client_request_handler)(ThreadId tid, UWord *args, UWord *ret) {
        (void *)(SE_(command_server->target_func_addr)));
       main_replaced = True;
       client_running = True;
+      target_id = tid;
     }
     break;
   default:
@@ -824,15 +827,7 @@ static void SE_(start_client_code)(ThreadId tid, ULong blocks_dispatched) {
     VG_(umsg)("Client is now running\n");
   }
 
-  VG_(umsg)("Client environment:\n");
-  HChar **env = VG_(client_envp);
-  HChar *curr = env[0];
-  for (Int i = 1; curr; i++) {
-    VG_(umsg)("\t%s\n", curr);
-    curr = env[i];
-  }
-
-  if (!main_replaced &&
+  if (!SE_(command_server)->guest_is_shared_library && !main_replaced &&
       VG_(get_IP)(target_id) == SE_(command_server)->main_addr) {
     VG_(umsg)
     ("Main (%p) called but not replaced\n",
