@@ -25,6 +25,7 @@
 #include "pub_tool_tooliface.h"
 #include "pub_tool_vki.h"
 #include "se_defs.h"
+#include "segrind.h"
 
 /**
  * @brief Input/Output pipes and logfiles

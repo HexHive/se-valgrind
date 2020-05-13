@@ -7,7 +7,7 @@
 #ifndef SE_VALGRIND_SE_COMMAND_H
 #define SE_VALGRIND_SE_COMMAND_H
 
-#include "se.h"
+#include "segrind_tool.h"
 
 const HChar *SE_MSG_MALLOC_TYPE;
 

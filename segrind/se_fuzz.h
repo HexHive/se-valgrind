@@ -5,8 +5,8 @@
 #ifndef SE_VALGRIND_SE_FUZZ_H
 #define SE_VALGRIND_SE_FUZZ_H
 
-#include "se.h"
 #include "se_command_server.h"
+#include "segrind_tool.h"
 
 /**
  * @brief Fuzzes the region between [start, end] using the seed

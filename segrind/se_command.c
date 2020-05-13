@@ -2,7 +2,7 @@
 // Created by derrick on 3/8/20.
 //
 
-#include "se.h"
+#include "segrind_tool.h"
 
 #include "se_command.h"
 

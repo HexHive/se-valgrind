@@ -5,7 +5,7 @@
 #ifndef SE_VALGRIND_SE_TAINT_H
 #define SE_VALGRIND_SE_TAINT_H
 
-#include "se.h"
+#include "segrind_tool.h"
 
 #include "libvex_ir.h"
 #include "pub_tool_oset.h"

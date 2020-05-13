@@ -5,7 +5,7 @@
 #ifndef SE_VALGRIND_SE_UTILS_H
 #define SE_VALGRIND_SE_UTILS_H
 
-#include "se.h"
+#include "segrind_tool.h"
 
 /**
  * @brief Copies an OSetWord size and data into allocated memory buffer

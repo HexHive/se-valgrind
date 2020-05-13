@@ -3,7 +3,7 @@
 //
 
 #include "pub_tool_options.h"
-#include "se.h"
+#include "segrind_tool.h"
 
 UInt SE_(MaxDuration) = DEFAULT_DURATION;
 Int SE_(cmd_in) = -1;

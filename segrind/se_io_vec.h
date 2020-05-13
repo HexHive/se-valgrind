@@ -10,9 +10,9 @@
 #include "pub_tool_oset.h"
 #include "pub_tool_rangemap.h"
 #include "pub_tool_xarray.h"
-#include "se.h"
 #include "se_command.h"
 #include "se_taint.h"
+#include "segrind_tool.h"
 
 const HChar *SE_IOVEC_MALLOC_TYPE;
 

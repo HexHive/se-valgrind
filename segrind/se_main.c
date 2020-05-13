@@ -23,12 +23,12 @@
    The GNU General Public License is contained in the file COPYING.
 */
 
-#include "se.h"
 #include "se_command_server.h"
 #include "se_defs.h"
 #include "se_io_vec.h"
 #include "se_taint.h"
 #include "se_utils.h"
+#include "segrind_tool.h"
 
 #include "libvex.h"
 #include "libvex_ir.h"
@@ -43,6 +43,7 @@
 #include "pub_tool_signals.h"
 #include "pub_tool_stacktrace.h"
 #include "pub_tool_xarray.h"
+#include "valgrind.h"
 
 #include "../coregrind/pub_core_clientstate.h"
 
@@ -99,6 +100,7 @@ static IRDirty *make_call_to_jump_to_target(void);
 static IRDirty *make_call_to_report_success(void);
 static Bool is_last_IMark(Int idx, Int max, IRStmt **stmts);
 static Int is_call_target_main(Addr call_target);
+static void set_up_execution_environment(void);
 
 /**
  * @brief Creates and sends a message to the command server
@@ -312,9 +314,48 @@ static void SE_(cleanup_and_exit)(void) {
   VG_(exit)(0);
 }
 
+static Bool SE_(client_request_handler)(ThreadId tid, UWord *args, UWord *ret) {
+  if (!VG_IS_TOOL_USERREQ('S', 'E', args[0])) {
+    return False;
+  }
+
+  *ret = 0;
+  switch (args[0]) {
+  case SE_USERREQ_START_SERVER:
+    VG_(umsg)("Starting Command Server\n");
+    SE_(start_server)(SE_(command_server), tid);
+
+    if (SE_(command_server)->guest_is_shared_library) {
+      if (SE_(command_server)->current_state != SERVER_EXECUTING &&
+          SE_(command_server)->current_state != SERVER_GETTING_INIT_STATE) {
+        SE_(cleanup_and_exit)();
+      }
+
+      /* Executors start here */
+      set_up_execution_environment();
+      VG_(set_shadow_regs_area)
+      (tid, 0, SE_offB_GUEST_IP, SE_szB_GUEST_IP,
+       (UChar *)&SE_(command_server)->target_func_addr);
+      VG_(set_SP)(tid, VG_(get_initial_client_SP)());
+      VG_(umsg)
+      ("Set IP to shared library address %p\n",
+       (void *)(SE_(command_server->target_func_addr)));
+      main_replaced = True;
+      client_running = True;
+    }
+    break;
+  default:
+    return False;
+  }
+  return True;
+}
+
 static void SE_(post_clo_init)(void) {
   SE_(command_server) = SE_(make_server)(SE_(cmd_in), SE_(cmd_out));
   VG_(umsg)("Command Server created!\n");
+  if (SE_(command_server)->guest_is_shared_library) {
+    VG_(needs_client_requests)(SE_(client_request_handler));
+  }
 }
 
 /**
@@ -561,6 +602,40 @@ static void SE_(signal_handler)(Int sigNo, Addr addr) {
   }
 }
 
+static void set_up_execution_environment() {
+  VG_(clo_vex_control).iropt_register_updates_default =
+      VexRegUpdAllregsAtMemAccess;
+  if (syscalls) {
+    VG_(OSetWord_Destroy)(syscalls);
+  }
+  if (program_states) {
+    VG_(deleteXA)(program_states);
+  }
+  if (target_name) {
+    VG_(free)(target_name);
+  }
+  if (irsb_ranges) {
+    VG_(deleteRangeMap)(irsb_ranges);
+  }
+
+  syscalls = VG_(OSetWord_Create)(VG_(malloc), SE_TOOL_ALLOC_STR, VG_(free));
+  program_states = VG_(newXA)(VG_(malloc), SE_TOOL_ALLOC_STR, VG_(free),
+                              sizeof(VexGuestArchState));
+  irsb_ranges = VG_(newRangeMap)(VG_(malloc), SE_TOOL_ALLOC_STR, VG_(free), 0);
+
+  VG_(set_fault_catcher)(SE_(signal_handler));
+  VG_(set_call_fault_catcher_in_generated)(True);
+  SE_(enable_global_memory_permissions)(SE_(command_server));
+
+  const HChar *fnname;
+  VG_(get_fnname)
+  (VG_(current_DiEpoch)(), SE_(command_server)->target_func_addr, &fnname);
+  target_name = VG_(strdup)(SE_TOOL_ALLOC_STR, fnname);
+  //    tl_assert(VG_(strlen)(target_name) > 0);
+  //            VG_(umsg)("Executing %s\n", target_name);
+  //    SE_(ppIOVec)(SE_(command_server)->current_io_vec);
+}
+
 /**
  * @brief Starts the command server, which only returns on exit, but executor
  * processes continue to the end
@@ -568,61 +643,20 @@ static void SE_(signal_handler)(Int sigNo, Addr addr) {
  * @param child
  */
 static void SE_(thread_creation)(ThreadId tid, ThreadId child) {
-  if (!client_running) {
-    target_id = child;
-    VG_(umsg)("Starting Command Server\n");
-    SE_(start_server)(SE_(command_server), child);
+  if (!SE_(command_server)->guest_is_shared_library) {
+    if (!client_running) {
+      target_id = child;
+      VG_(umsg)("Starting Command Server\n");
+      SE_(start_server)(SE_(command_server), child);
 
-    if (SE_(command_server)->current_state != SERVER_EXECUTING &&
-        SE_(command_server)->current_state != SERVER_GETTING_INIT_STATE) {
-      SE_(cleanup_and_exit)();
-    }
+      if (SE_(command_server)->current_state != SERVER_EXECUTING &&
+          SE_(command_server)->current_state != SERVER_GETTING_INIT_STATE) {
+        SE_(cleanup_and_exit)();
+      }
 
-    /* Child executors arrive here */
-    VG_(clo_vex_control).iropt_register_updates_default =
-        VexRegUpdAllregsAtMemAccess;
-    if (syscalls) {
-      VG_(OSetWord_Destroy)(syscalls);
+      /* Child executors arrive here */
+      set_up_execution_environment();
     }
-    if (program_states) {
-      VG_(deleteXA)(program_states);
-    }
-    if (target_name) {
-      VG_(free)(target_name);
-    }
-    if (irsb_ranges) {
-      VG_(deleteRangeMap)(irsb_ranges);
-    }
-
-    syscalls = VG_(OSetWord_Create)(VG_(malloc), SE_TOOL_ALLOC_STR, VG_(free));
-    program_states = VG_(newXA)(VG_(malloc), SE_TOOL_ALLOC_STR, VG_(free),
-                                sizeof(VexGuestArchState));
-    irsb_ranges =
-        VG_(newRangeMap)(VG_(malloc), SE_TOOL_ALLOC_STR, VG_(free), 0);
-
-    VG_(set_fault_catcher)(SE_(signal_handler));
-    VG_(set_call_fault_catcher_in_generated)(True);
-    SE_(enable_global_memory_permissions)(SE_(command_server));
-
-    if (SE_(command_server)->guest_is_shared_library) {
-      VG_(set_shadow_regs_area)
-      (target_id, 0, SE_offB_GUEST_IP, SE_szB_GUEST_IP,
-       (UChar *)&SE_(command_server)->target_func_addr);
-      VG_(set_SP)(target_id, VG_(get_initial_client_SP)());
-      VG_(umsg)
-      ("Set IP to shared library address %p\n",
-       (void *)(SE_(command_server->target_func_addr)));
-      main_replaced = True;
-      client_running = True;
-    }
-
-    const HChar *fnname;
-    VG_(get_fnname)
-    (VG_(current_DiEpoch)(), SE_(command_server)->target_func_addr, &fnname);
-    target_name = VG_(strdup)(SE_TOOL_ALLOC_STR, fnname);
-    //    tl_assert(VG_(strlen)(target_name) > 0);
-    //            VG_(umsg)("Executing %s\n", target_name);
-    //    SE_(ppIOVec)(SE_(command_server)->current_io_vec);
   }
 }
 
@@ -787,7 +821,15 @@ static void jump_to_target_function(void) {
 static void SE_(start_client_code)(ThreadId tid, ULong blocks_dispatched) {
   if (!client_running && tid == target_id) {
     client_running = True;
-    //    VG_(umsg)("Client is now running\n");
+    VG_(umsg)("Client is now running\n");
+  }
+
+  VG_(umsg)("Client environment:\n");
+  HChar **env = VG_(client_envp);
+  HChar *curr = env[0];
+  for (Int i = 1; curr; i++) {
+    VG_(umsg)("\t%s\n", curr);
+    curr = env[i];
   }
 
   if (!main_replaced &&

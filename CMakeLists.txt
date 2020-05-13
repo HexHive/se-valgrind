@@ -26,7 +26,7 @@ set(VALGRIND_TOOL_SRCS
         )
 
 set(VALGRIND_TOOL_INCS
-        ${VALGRIND_TOOL_DIR}/se.h
+        ${VALGRIND_TOOL_DIR}/segrind.h
         ${VALGRIND_TOOL_DIR}/se_command.h
         ${VALGRIND_INCS}
         ${VALGRIND_TOOL_DIR}/se_command_server.h
@@ -35,6 +35,7 @@ set(VALGRIND_TOOL_INCS
         ${VALGRIND_TOOL_DIR}/se_taint.h
         ${VALGRIND_TOOL_DIR}/se_utils.h
         ${VALGRIND_TOOL_DIR}/se_fuzz.h
+        ${VALGRIND_TOOL_DIR}/segrind_tool.h
         )
 
 add_custom_command(
@@ -72,3 +73,6 @@ add_executable(
 )
 
 add_dependencies(BuildValgrind ConfigureValgrind)
+
+add_executable(segrind_so_loader ${VALGRIND_TOOL_DIR}/segrind_so_loader.c ${VALGRIND_TOOL_DIR}/segrind.h)
+target_link_libraries(segrind_so_loader dl)

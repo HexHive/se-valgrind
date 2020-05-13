@@ -139,6 +139,36 @@ static void send_ack_to_commander(SE_(cmd_server) * server) {
 }
 
 /**
+ * @brief Finds the shared library function location, and sets
+ * server->target_func_addr if found or 0 if not found
+ * @param msg
+ * @param server
+ * @return True if the guest is a shared library and function is found
+ */
+static Bool handle_set_so_target_cmd(SE_(cmd_msg) * msg,
+                                     SE_(cmd_server) * server) {
+  tl_assert(msg);
+  tl_assert(server);
+  tl_assert(msg->msg_type == SEMSG_SET_SO_TGT);
+
+  if (!server->guest_is_shared_library) {
+    return False;
+  }
+
+  SymAVMAs symAvma;
+  VG_(umsg)("Looking for shared library target %s\n", msg->data);
+  if (VG_(lookup_symbol_SLOW)(VG_(current_DiEpoch()), "*", msg->data,
+                              &symAvma)) {
+    VG_(umsg)("Found %s at %p\n", msg->data, (void *)symAvma.main);
+    server->target_func_addr = symAvma.main;
+    return True;
+  } else {
+    VG_(umsg)("Could not find %s\n", msg->data);
+    return False;
+  }
+}
+
+/**
  * @brief Looks up symbol name, and sets server->target_func_addr if found, or 0
  * if not found
  * @param msg
@@ -467,6 +497,12 @@ static Bool handle_command(SE_(cmd_server) * server) {
     if (msg_handled) {
       /* Get the initial starting state for the server */
       parent_should_fork = True;
+    }
+    break;
+  case SEMSG_SET_SO_TGT:
+    msg_handled = handle_set_so_target_cmd(cmd_msg, server);
+    if (msg_handled) {
+      report_success(server, 0, NULL);
     }
     break;
   case SEMSG_EXIT:
@@ -1378,7 +1414,7 @@ SE_(cmd_server) * SE_(make_server)(Int commander_r_fd, Int commander_w_fd) {
   cmd_server->initial_stack_ptr = -1;
   const HChar *exe_name = VG_(args_the_exename);
   cmd_server->guest_is_shared_library =
-      (VG_(strcmp)(exe_name + VG_(strlen)(exe_name) - 3, ".so") == 0);
+      (VG_(strstr)(exe_name, "segrind_so_loader") == 0);
   if (cmd_server->guest_is_shared_library) {
     VG_(umsg)("Target %s is a shared library\n", exe_name);
   }
