@@ -315,21 +315,22 @@ static void SE_(cleanup_and_exit)(void) {
 }
 
 static Bool SE_(client_request_handler)(ThreadId tid, UWord *args, UWord *ret) {
-  if (!VG_IS_TOOL_USERREQ('S', 'E', args[0])) {
-    return False;
-  }
+    if (!VG_IS_TOOL_USERREQ('S', 'E', args[0])) {
+        return False;
+    }
 
-  VG_(umsg)("Handling request from Thread %d\n", tid);
+    VG_(umsg)("Handling request from Thread %u\n", tid);
 
-  *ret = 0;
-  switch (args[0]) {
-  case SE_USERREQ_START_SERVER:
-    VG_(umsg)("Starting Command Server\n");
-    SE_(start_server)(SE_(command_server), tid);
+    *ret = 0;
+    switch (args[0]) {
+        case SE_USERREQ_START_SERVER:
+            VG_(umsg)("Starting Command Server\n");
+            SE_(start_server)(SE_(command_server), tid);
 
-    if (SE_(command_server)->guest_is_shared_library) {
-      if (SE_(command_server)->current_state != SERVER_EXECUTING &&
-          SE_(command_server)->current_state != SERVER_GETTING_INIT_STATE) {
+            if (SE_(command_server)->guest_is_shared_library) {
+                if (SE_(command_server)->current_state != SERVER_EXECUTING &&
+                    SE_(command_server)->current_state !=
+                    SERVER_GETTING_INIT_STATE) {
         SE_(cleanup_and_exit)();
       }
 
