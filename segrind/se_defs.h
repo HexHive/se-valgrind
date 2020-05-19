@@ -109,11 +109,11 @@ extern void vexSetAllocModeTEMP_and_clear(void);
         offsetof(VexGuestArchState, guest_X0),                                 \
         offsetof(VexGuestArchState, guest_X4),                                 \
         offsetof(VexGuestArchState, guest_X5),                                 \
-        offsetof(VexGuestArchState, guest_X10)                                 \
-        offsetof(VexGuestArchState, guest_X11)                                 \
-        offsetof(VexGuestArchState, guest_X12)                                 \
-        offsetof(VexGuestArchState, guest_X13)                                 \
-        offsetof(VexGuestArchState, guest_X14)                                 \
+        offsetof(VexGuestArchState, guest_X10),                                \
+        offsetof(VexGuestArchState, guest_X11),                                \
+        offsetof(VexGuestArchState, guest_X12),                                \
+        offsetof(VexGuestArchState, guest_X13),                                \
+        offsetof(VexGuestArchState, guest_X14),                                \
         offsetof(VexGuestArchState, guest_X15)                                 \
   }
 #define SE_NUM_GPRS 14
