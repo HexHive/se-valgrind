@@ -102,15 +102,21 @@ extern void vexSetAllocModeTEMP_and_clear(void);
 #define SE_O_GPRS                                                              \
   {                                                                            \
     offsetof(VexGuestArchState, guest_X0),                                     \
-        offsetof(VexGuestArchState, guest_X1),                                 \
-        offsetof(VexGuestArchState, guest_X2),                                 \
         offsetof(VexGuestArchState, guest_X3),                                 \
+        offsetof(VexGuestArchState, guest_X2),                                 \
+        offsetof(VexGuestArchState, guest_X9),                                 \
+        offsetof(VexGuestArchState, guest_X1),                                 \
+        offsetof(VexGuestArchState, guest_X0),                                 \
         offsetof(VexGuestArchState, guest_X4),                                 \
         offsetof(VexGuestArchState, guest_X5),                                 \
-        offsetof(VexGuestArchState, guest_X6),                                 \
-        offsetof(VexGuestArchState, guest_X7)                                  \
+        offsetof(VexGuestArchState, guest_X10)                                 \
+        offsetof(VexGuestArchState, guest_X11)                                 \
+        offsetof(VexGuestArchState, guest_X12)                                 \
+        offsetof(VexGuestArchState, guest_X13)                                 \
+        offsetof(VexGuestArchState, guest_X14)                                 \
+        offsetof(VexGuestArchState, guest_X15)                                 \
   }
-#define SE_NUM_GPRS 8
+#define SE_NUM_GPRS 14
 
 #elif defined(VGA_s390x)
 #include "../VEX/priv/guest_s390_defs.h"
