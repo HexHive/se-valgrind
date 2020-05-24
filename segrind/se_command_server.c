@@ -1213,91 +1213,91 @@ static void handle_coverage(SE_(cmd_server) * server) {
   }
   VG_(OSetWord_ResetIter)(coverage);
 
-  UWord addr;
-  while (VG_(OSetWord_Next)(coverage, &addr)) {
-    if (!VG_(OSetWord_Contains)(server->coverage, addr)) {
-      VG_(OSetWord_Insert)(server->coverage, addr);
-    }
-  }
-
-  VG_(OSetWord_Destroy)(coverage);
-}
-
-static Bool set_global_memory_permissions(SE_(cmd_server) * server,
-                                          Int permission) {
-  Int entries_needed;
-  Addr *entries = NULL;
-  Bool result = True;
-  Addr start;
-
-  entries_needed = VG_(am_get_segment_starts)(SkAnonC | SkFileC, &start, 1);
-  if (entries_needed < 0) {
-    /* See pub_tool_aspacemgr for why I'm doing this */
-    entries_needed *= -1;
-    entries = VG_(malloc)(SE_TOOL_ALLOC_STR, sizeof(Addr) * entries_needed);
-    entries_needed =
-        VG_(am_get_segment_starts)(SkAnonC | SkFileC, entries, entries_needed);
-    if (entries_needed < 0) {
-      VG_(umsg)("Unexpected entries needed: %d\n", entries_needed);
-      result = False;
-      goto exit;
-    }
-    NSegment const *target_segment =
-        VG_(am_find_nsegment)(server->target_func_addr);
-    //    const HChar* target_file_name = VG_(am_get_filename)(target_segment);
-
-    for (Int i = 0; i < entries_needed; i++) {
-      start = entries[i];
-      //      VG_(umsg)("Getting segment for %p\n", (void *)start);
-      NSegment const *segment = VG_(am_find_nsegment)(start);
-      if (segment) {
-        AddrInfo ai;
-        VG_(describe_addr)(VG_(current_DiEpoch)(), segment->start, &ai);
-        //        VG_(pp_addrinfo)(segment->start, &ai);
-        Bool change_permission =
-            segment->hasW && !segment->isCH && !segment->hasX &&
-            !VG_(am_addr_is_in_extensible_client_stack)(segment->start) &&
-            (segment->kind != SkFileC || segment->ino == target_segment->ino);
-        //        if (change_permission && ai.tag == Addr_SectKind) {
-        //          change_permission = (ai.Addr.SectKind.kind != Vg_SectGOTPLT
-        //          &&
-        //                               ai.Addr.SectKind.kind != Vg_SectPLT &&
-        //                               ai.Addr.SectKind.kind != Vg_SectGOT);
-        //        }
-        VG_(clear_addrinfo)(&ai);
-        if (change_permission) {
-          VG_(umsg)
-          ("Changing permissions for [ %p --- %p ] to %d\n",
-           (void *)segment->start, (void *)segment->end, permission);
-          SysRes res = VG_(am_mmap_anon_fixed_client)(
-              segment->start, segment->end - segment->start, permission);
-          if (sr_Err(res)) {
-            VG_(umsg)("Failed to set permissions\n");
-            result = False;
-            goto exit;
-          }
+    UWord addr;
+    while (VG_(OSetWord_Next)(coverage, &addr)) {
+        if (!VG_(OSetWord_Contains)(server->coverage, addr)) {
+            VG_(OSetWord_Insert)(server->coverage, addr);
         }
-      }
     }
-  }
 
-exit:
-  if (entries) {
-    VG_(free)(entries);
-  }
-  //  VG_(umsg)("Finished removing global permissions\n");
-  return result;
+    VG_(OSetWord_Destroy)(coverage);
 }
 
-Bool SE_(enable_global_memory_permissions)(SE_(cmd_server) * server) {
-  return True;
-  //  return set_global_memory_permissions(server, VKI_PROT_READ |
-  //  VKI_PROT_WRITE | VKI_PROT_EXEC);
+//static Bool set_global_memory_permissions(SE_(cmd_server) * server,
+//                                          Int permission) {
+//  Int entries_needed;
+//  Addr *entries = NULL;
+//  Bool result = True;
+//  Addr start;
+//
+//  entries_needed = VG_(am_get_segment_starts)(SkAnonC | SkFileC, &start, 1);
+//  if (entries_needed < 0) {
+//    /* See pub_tool_aspacemgr for why I'm doing this */
+//    entries_needed *= -1;
+//    entries = VG_(malloc)(SE_TOOL_ALLOC_STR, sizeof(Addr) * entries_needed);
+//    entries_needed =
+//        VG_(am_get_segment_starts)(SkAnonC | SkFileC, entries, entries_needed);
+//    if (entries_needed < 0) {
+//      VG_(umsg)("Unexpected entries needed: %d\n", entries_needed);
+//      result = False;
+//      goto exit;
+//    }
+//    NSegment const *target_segment =
+//        VG_(am_find_nsegment)(server->target_func_addr);
+//    //    const HChar* target_file_name = VG_(am_get_filename)(target_segment);
+//
+//    for (Int i = 0; i < entries_needed; i++) {
+//      start = entries[i];
+//      //      VG_(umsg)("Getting segment for %p\n", (void *)start);
+//      NSegment const *segment = VG_(am_find_nsegment)(start);
+//      if (segment) {
+//        AddrInfo ai;
+//        VG_(describe_addr)(VG_(current_DiEpoch)(), segment->start, &ai);
+//        //        VG_(pp_addrinfo)(segment->start, &ai);
+//        Bool change_permission =
+//            segment->hasW && !segment->isCH && !segment->hasX &&
+//            !VG_(am_addr_is_in_extensible_client_stack)(segment->start) &&
+//            (segment->kind != SkFileC || segment->ino == target_segment->ino);
+//        //        if (change_permission && ai.tag == Addr_SectKind) {
+//        //          change_permission = (ai.Addr.SectKind.kind != Vg_SectGOTPLT
+//        //          &&
+//        //                               ai.Addr.SectKind.kind != Vg_SectPLT &&
+//        //                               ai.Addr.SectKind.kind != Vg_SectGOT);
+//        //        }
+//        VG_(clear_addrinfo)(&ai);
+//        if (change_permission) {
+//          VG_(umsg)
+//          ("Changing permissions for [ %p --- %p ] to %d\n",
+//           (void *)segment->start, (void *)segment->end, permission);
+//          SysRes res = VG_(am_mmap_anon_fixed_client)(
+//              segment->start, segment->end - segment->start, permission);
+//          if (sr_Err(res)) {
+//            VG_(umsg)("Failed to set permissions\n");
+//            result = False;
+//            goto exit;
+//          }
+//        }
+//      }
+//    }
+//  }
+//
+//exit:
+//  if (entries) {
+//    VG_(free)(entries);
+//  }
+//  //  VG_(umsg)("Finished removing global permissions\n");
+//  return result;
+//}
+
+Bool SE_(enable_global_memory_permissions)(SE_(cmd_server) *server) {
+    return True;
+    //  return set_global_memory_permissions(server, VKI_PROT_READ |
+    //  VKI_PROT_WRITE | VKI_PROT_EXEC);
 }
 
-Bool SE_(remove_global_memory_permissions)(SE_(cmd_server) * server) {
-  return True;
-  //  return set_global_memory_permissions(server, VKI_PROT_NONE);
+Bool SE_(remove_global_memory_permissions)(SE_(cmd_server) *server) {
+    return True;
+    //  return set_global_memory_permissions(server, VKI_PROT_NONE);
 }
 
 /**

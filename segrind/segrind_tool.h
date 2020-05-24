@@ -65,10 +65,13 @@ typedef enum _memorized_obj_type {
   se_memo_return_value, /* A return value */
 } SE_(memoized_type);
 
+/**
+ * @brief An object that can be transferred in FIFO pipes
+ */
 typedef struct memoized_object {
-  UChar *buf;
-  SizeT len;
-  SE_(memoized_type) type;
+    UChar *buf;
+    SizeT len;
+    SE_(memoized_type) type;
 } SE_(memoized_object);
 
 /*****************************************************

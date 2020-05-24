@@ -21,35 +21,47 @@ const HChar *SE_IOVEC_MALLOC_TYPE;
 #define OBJ_END_MAGIC 0b00000100
 #define OBJ_ALLOCATED_MAGIC 0b00001000
 
+/**
+ * @brief The relevant program state stored in IOVecs
+ */
 typedef struct se_program_state_ {
-  XArray *register_state;  /* Register values */
-  RangeMap *address_state; /* Object layout */
-  RangeMap
-      *pointer_member_locations; /* Location and value of pointer submembers */
+    XArray *register_state;  /* Register values */
+    RangeMap *address_state; /* Object layout */
+    RangeMap
+            *pointer_member_locations; /* Location and value of pointer submembers */
 } SE_(program_state);
 
+/**
+ * @brief The return value of the function
+ */
 typedef struct se_return_value_ {
-  SE_(memoized_object) value;
-  Bool is_ptr;
+    SE_(memoized_object) value;
+    Bool is_ptr;
 } SE_(return_value);
 
+/**
+ * @brief A register value and whether it is a pointer
+ */
 typedef struct se_register_value_ {
-  Int guest_state_offset;
-  RegWord value;
-  Bool is_ptr;
+    Int guest_state_offset;
+    RegWord value;
+    Bool is_ptr;
 } SE_(register_value);
 
+/**
+ * @brief The main IOVec object that segrind uses for analysis
+ */
 typedef struct io_vec {
-  VexArch host_arch;       /* Architecture that generated this IOVec */
-  VexEndness host_endness; /* Endianess of generation machine */
-  UInt random_seed;        /* Random seed used to fuzz this IOVec */
+    VexArch host_arch;       /* Architecture that generated this IOVec */
+    VexEndness host_endness; /* Endianess of generation machine */
+    UInt random_seed;        /* Random seed used to fuzz this IOVec */
 
-  SE_(program_state) initial_state; /* Initial program state */
-  RangeMap *expected_state;         /* State expected post-execution */
+    SE_(program_state) initial_state; /* Initial program state */
+    RangeMap *expected_state;         /* State expected post-execution */
 
-  SE_(return_value) return_value; /* The expected return value */
+    SE_(return_value) return_value; /* The expected return value */
 
-  OSet *system_calls; /* Unique set of system calls executed */
+    OSet *system_calls; /* Unique set of system calls executed */
 } SE_(io_vec);
 
 /**

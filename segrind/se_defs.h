@@ -49,14 +49,15 @@ extern void vexSetAllocModeTEMP_and_clear(void);
 #define SE_GUEST_WORD_TYPE Ity_I64
 #define SE_O_GPRS                                                              \
   {                                                                            \
-    offsetof(VexGuestArchState, guest_RAX),                                    \
-        offsetof(VexGuestArchState, guest_RCX),                                \
-        offsetof(VexGuestArchState, guest_RDX),                                \
-        offsetof(VexGuestArchState, guest_RBX),                                \
-        offsetof(VexGuestArchState, guest_RSI),                                \
         offsetof(VexGuestArchState, guest_RDI),                                \
+        offsetof(VexGuestArchState, guest_RSI),                                \
+        offsetof(VexGuestArchState, guest_RDX),                                \
+        offsetof(VexGuestArchState, guest_RCX),                                \
         offsetof(VexGuestArchState, guest_R8),                                 \
         offsetof(VexGuestArchState, guest_R9),                                 \
+        /* General Purpose Registers */                                        \
+        offsetof(VexGuestArchState, guest_RAX),                                \
+        offsetof(VexGuestArchState, guest_RBX),                                \
         offsetof(VexGuestArchState, guest_R10),                                \
         offsetof(VexGuestArchState, guest_R11),                                \
         offsetof(VexGuestArchState, guest_R12),                                \
@@ -102,19 +103,19 @@ extern void vexSetAllocModeTEMP_and_clear(void);
 #define SE_O_GPRS                                                              \
   {                                                                            \
     offsetof(VexGuestArchState, guest_X0),                                     \
-        offsetof(VexGuestArchState, guest_X3),                                 \
-        offsetof(VexGuestArchState, guest_X2),                                 \
-        offsetof(VexGuestArchState, guest_X9),                                 \
         offsetof(VexGuestArchState, guest_X1),                                 \
-        offsetof(VexGuestArchState, guest_X0),                                 \
+        offsetof(VexGuestArchState, guest_X2),                                 \
+        offsetof(VexGuestArchState, guest_X3),                                 \
         offsetof(VexGuestArchState, guest_X4),                                 \
         offsetof(VexGuestArchState, guest_X5),                                 \
+        offsetof(VexGuestArchState, guest_X6),                                 \
+        offsetof(VexGuestArchState, guest_X7),                                 \
+        offsetof(VexGuestArchState, guest_X8),                                \
+        offsetof(VexGuestArchState, guest_X9),                                \
         offsetof(VexGuestArchState, guest_X10),                                \
         offsetof(VexGuestArchState, guest_X11),                                \
         offsetof(VexGuestArchState, guest_X12),                                \
-        offsetof(VexGuestArchState, guest_X13),                                \
-        offsetof(VexGuestArchState, guest_X14),                                \
-        offsetof(VexGuestArchState, guest_X15)                                 \
+        offsetof(VexGuestArchState, guest_X13)                                 \
   }
 #define SE_NUM_GPRS 14
 

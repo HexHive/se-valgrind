@@ -33,9 +33,12 @@ typedef struct se_tainted_location {
   } location;
 } SE_(tainted_loc);
 
+/**
+ * @brief
+ */
 typedef struct se_taint_info_ {
-  SE_(tainted_loc) taint_source; /* The source of the faulting address */
-  Addr faulting_address;         /* The address which caused the fault */
+    SE_(tainted_loc) taint_source; /* The source of the faulting address */
+    Addr faulting_address;         /* The address which caused the fault */
 } SE_(taint_info);
 
 /**
