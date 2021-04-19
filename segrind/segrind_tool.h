@@ -30,32 +30,32 @@
 /**
  * @brief Input/Output pipes and logfiles
  */
-Int SE_(cmd_in), SE_(cmd_out), SE_(log);
+extern Int SE_(cmd_in), SE_(cmd_out), SE_(log);
 
 /**
  * @brief Number of milliseconds to wait for a function to complete
  */
-UInt SE_(MaxDuration);
+extern UInt SE_(MaxDuration);
 
 /**
  * @brief Address of main function
  */
-Addr SE_(user_main);
+extern Addr SE_(user_main);
 
 /**
  * @brief Random seed
  */
-UInt SE_(seed);
+extern UInt SE_(seed);
 
 /**
  * @brief Max attempts at executing a function before quitting
  */
-UInt SE_(MaxAttempts);
+extern UInt SE_(MaxAttempts);
 
 /**
  * @brief Max number of instructions to execute per function execution
  */
-ULong SE_(MaxInstructions);
+extern ULong SE_(MaxInstructions);
 
 typedef enum _memorized_obj_type {
   se_memo_invalid,

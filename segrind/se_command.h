@@ -9,7 +9,7 @@
 
 #include "segrind_tool.h"
 
-const HChar *SE_MSG_MALLOC_TYPE;
+extern const HChar *SE_MSG_MALLOC_TYPE;
 
 /**
  * @brief The types of messages that can be sent between executor, command

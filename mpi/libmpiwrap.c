@@ -352,21 +352,21 @@ static void showCombiner ( FILE* f, int combiner )
 #     endif
       case MPI_COMBINER_CONTIGUOUS:  fprintf(f, "CONTIGUOUS"); break;
       case MPI_COMBINER_VECTOR:      fprintf(f, "VECTOR"); break;
-#if   defined(MPI_COMBINER_HVECTOR_INTEGER)
-      case MPI_COMBINER_HVECTOR_INTEGER: fprintf(f, "HVECTOR_INTEGER"); break;
-#     endif
+//#if   defined(MPI_COMBINER_HVECTOR_INTEGER)
+//      case MPI_COMBINER_HVECTOR_INTEGER: fprintf(f, "HVECTOR_INTEGER"); break;
+//#     endif
       case MPI_COMBINER_HVECTOR:     fprintf(f, "HVECTOR"); break;
       case MPI_COMBINER_INDEXED:     fprintf(f, "INDEXED"); break;
-#if   defined(MPI_COMBINER_HINDEXED_INTEGER)
-      case MPI_COMBINER_HINDEXED_INTEGER: fprintf(f, "HINDEXED_INTEGER"); break;
-#     endif
+//#if   defined(MPI_COMBINER_HINDEXED_INTEGER)
+//      case MPI_COMBINER_HINDEXED_INTEGER: fprintf(f, "HINDEXED_INTEGER"); break;
+//#     endif
       case MPI_COMBINER_HINDEXED:    fprintf(f, "HINDEXED"); break;
-#if   defined(MPI_COMBINER_INDEXED_BLOCK)
-      case MPI_COMBINER_INDEXED_BLOCK: fprintf(f, "INDEXED_BLOCK"); break;
-#     endif
-#if   defined(MPI_COMBINER_STRUCT_INTEGER)
-      case MPI_COMBINER_STRUCT_INTEGER: fprintf(f, "STRUCT_INTEGER"); break;
-#     endif
+//#if   defined(MPI_COMBINER_INDEXED_BLOCK)
+//      case MPI_COMBINER_INDEXED_BLOCK: fprintf(f, "INDEXED_BLOCK"); break;
+//#     endif
+//#if   defined(MPI_COMBINER_STRUCT_INTEGER)
+//      case MPI_COMBINER_STRUCT_INTEGER: fprintf(f, "STRUCT_INTEGER"); break;
+//#     endif
       case MPI_COMBINER_STRUCT:      fprintf(f, "STRUCT"); break;
 #if   defined(MPI_COMBINER_SUBARRAY)
       case MPI_COMBINER_SUBARRAY:    fprintf(f, "SUBARRAY"); break;

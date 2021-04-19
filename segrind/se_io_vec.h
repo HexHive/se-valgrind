@@ -14,7 +14,7 @@
 #include "se_taint.h"
 #include "segrind_tool.h"
 
-const HChar *SE_IOVEC_MALLOC_TYPE;
+extern const HChar *SE_IOVEC_MALLOC_TYPE;
 
 #define ALLOCATED_SUBPTR_MAGIC 0b00000001
 #define OBJ_START_MAGIC 0b00000010

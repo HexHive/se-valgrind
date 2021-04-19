@@ -12,6 +12,7 @@ Int SE_(log) = -1;
 Addr SE_(user_main) = 0;
 UInt SE_(MaxAttempts) = DEFAULT_ATTEMPTS;
 ULong SE_(MaxInstructions) = DEFAULT_MAX_INSTR;
+UInt SE_(seed) = 0;
 
 Bool SE_(process_cmd_line_option)(const HChar *arg) {
   const HChar *tmp_str;
