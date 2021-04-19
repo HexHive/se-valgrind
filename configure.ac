@@ -114,7 +114,7 @@ fi
 rm $tmpfile
 
 # Make sure we can compile in C99 mode.
-AC_PROG_CC_C99
+AC_PROG_CC
 if test "$ac_cv_prog_cc_c99" == "no"; then
     AC_MSG_ERROR([Valgrind relies on a C compiler supporting C99])
 fi
@@ -4236,7 +4236,7 @@ CFLAGS="$save_CFLAGS"
 AC_TYPE_UID_T
 AC_TYPE_OFF_T
 AC_TYPE_SIZE_T
-AC_HEADER_TIME
+HAVE_SYS_TIME_H
 
 
 #----------------------------------------------------------------------------
