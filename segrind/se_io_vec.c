@@ -566,14 +566,19 @@ Bool SE_(return_values_same)(SE_(return_value) * rv_1,
       //      VG_(umsg)("3\n");
       return False;
     }
-    if (val1 == 0 && val2 != 0) {
+/*    if (val1 == 0 && val2 != 0) {
       //      VG_(umsg)("4\n");
       return False;
     }
     if (val1 != 0 && val2 == 0) {
       //      VG_(umsg)("5\n");
       return False;
-    }
+    }*/
+    /* Only check first byte for sensitivity analysis. This is to filter
+     * instances where optimized code only writes one byte to a register,
+     * instead of writing the whole register.
+     */
+    return VG_(memcmp)(&val1, &val2, 1) == 0;
   }
 
   return True;
